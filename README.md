@@ -1,5 +1,5 @@
 # RondiTrack
-# RondiTrack — API Foundations & Domain Modeling
+# RondiTrack: API Foundations & Domain Modeling
 
 RondiTrack is the backend API foundation for tracking **stokvels** — rotating
 savings and credit associations. This assignment covers the initial domain
