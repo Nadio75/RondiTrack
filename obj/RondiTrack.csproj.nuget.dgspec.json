@@ -54,11 +54,11 @@
           "dependencies": {
             "Microsoft.AspNetCore.OpenApi": {
               "target": "Package",
-              "version": "[10.0.10, )"
+              "version": "[10.0.12, )"
             },
             "Scalar.AspNetCore": {
               "target": "Package",
-              "version": "[2.17.7, )"
+              "version": "[2.17.8, )"
             }
           },
           "imports": [

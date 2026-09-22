@@ -1,18 +1,25 @@
-using Scalar.AspNetCore;
+using Scalar.AspNetCore;    
 using RondiTrack.Data;
+using RondiTrack.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // --- Services registration (before Build()) ---
 
-// Registers Controllers support — required since we're using ControllerBase classes.
 builder.Services.AddControllers();
-
-// Registers the native .NET OpenAPI document generator (built into .NET 9/10,
-// this is what produces the JSON spec describing your API's shape).
 builder.Services.AddOpenApi();
 
-// Our in-memory data store, shared as a single instance for the app's lifetime.
+// Our in-memory data stores, each shared as a single instance for the app's lifetime.
 builder.Services.AddSingleton<IStokvelStore, InMemoryStokvelStore>();
+builder.Services.AddSingleton<IContributionStore, InMemoryContributionStore>();
+builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+
+// Services hold no state of their own — they just orchestrate the stores above,
+// which are already singletons — so these are registered as Scoped.
+builder.Services.AddScoped<StokvelMembershipService>();
+builder.Services.AddScoped<RecordContributionService>();
+
+builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 

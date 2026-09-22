@@ -3,157 +3,116 @@ namespace RondiTrack.Controllers;
 using Microsoft.AspNetCore.Mvc;
 using RondiTrack.Data;
 using RondiTrack.Models;
+using RondiTrack.Mapping;
+using RondiTrack.Services;
+using RondiTrack.Extensions;
 
 [ApiController]
 [Route("api/stokvels")]
 public class StokvelsController : ControllerBase
 {
     private readonly IStokvelStore _store;
+    private readonly StokvelMembershipService _membershipService;
+    private readonly RecordContributionService _contributionService;
 
-    public StokvelsController(IStokvelStore store)
+    public StokvelsController(
+        IStokvelStore store,
+        StokvelMembershipService membershipService,
+        RecordContributionService contributionService)
     {
         _store = store;
+        _membershipService = membershipService;
+        _contributionService = contributionService;
     }
 
-    // GET /api/stokvels
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Stokvel>>> GetAll()
+    public async Task<ActionResult<IEnumerable<StokvelResponse>>> GetAll()
     {
         var stokvels = await _store.GetAllStokvelsAsync();
-        return Ok(stokvels);
+        return Ok(stokvels.Select(StokvelMapper.ToResponse));
     }
 
-    // GET /api/stokvels/{id}
     [HttpGet("{id}")]
-    public async Task<ActionResult<Stokvel>> GetById(Guid id)
+    public async Task<ActionResult<StokvelResponse>> GetById(Guid id)
     {
         var stokvel = await _store.GetStokvelByIdAsync(id);
-        return stokvel is null ? NotFound() : Ok(stokvel);
+        return stokvel is null
+            ? this.ToProblem(ServiceResultStatus.NotFound, "Stokvel not found.")
+            : Ok(StokvelMapper.ToResponse(stokvel));
     }
 
-    // POST /api/stokvels
     [HttpPost]
-    public async Task<ActionResult<Stokvel>> Create(CreateStokvelRequest request)
+    public async Task<ActionResult<StokvelResponse>> Create(CreateStokvelRequest request)
     {
         try
         {
-            // Constructor enforces: name not blank, contribution amount > 0.
             var stokvel = new Stokvel(request.Name, request.ContributionAmount);
             await _store.AddStokvelAsync(stokvel);
-
-            return CreatedAtAction(nameof(GetById), new { id = stokvel.Id }, stokvel);
+            var response = StokvelMapper.ToResponse(stokvel);
+            return CreatedAtAction(nameof(GetById), new { id = stokvel.Id }, response);
         }
         catch (ArgumentException ex)
         {
-            // Covers both "blank name" AND "contribution <= 0" —
-            // both are the constructor rejecting bad input, both are 400.
-            return BadRequest(ex.Message);
+            return Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest);
         }
     }
 
-    // PUT /api/stokvels/{id}
-    // Purpose: update name and/or contribution amount.
     [HttpPut("{id}")]
-    public async Task<ActionResult<Stokvel>> Update(Guid id, CreateStokvelRequest request)
+    public async Task<ActionResult<StokvelResponse>> Update(Guid id, CreateStokvelRequest request)
     {
         var stokvel = await _store.GetStokvelByIdAsync(id);
         if (stokvel is null)
-        {
-            return NotFound();
-        }
+            return this.ToProblem(ServiceResultStatus.NotFound, "Stokvel not found.");
 
         try
         {
             stokvel.Rename(request.Name);
             stokvel.UpdateContributionAmount(request.ContributionAmount);
-            return Ok(stokvel);
+            return Ok(StokvelMapper.ToResponse(stokvel));
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(ex.Message);
+            return Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest);
         }
     }
 
-    // DELETE /api/stokvels/{id}
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
         var deleted = await _store.DeleteStokvelAsync(id);
-        return deleted ? NoContent() : NotFound();
+        return deleted
+            ? NoContent()
+            : this.ToProblem(ServiceResultStatus.NotFound, "Stokvel not found.");
     }
 
-    // POST /api/stokvels/{id}/members
-    // Purpose: add an existing user to this stokvel.
-    // Note the route: {id} here refers to the STOKVEL's id (nested resource,
-    // per the "nested relationship" requirement in the brief). The user
-    // being added is identified in the request BODY, not the URL, because
-    // membership is being created (POST = create something) on the stokvel.
     [HttpPost("{id}/members")]
     public async Task<IActionResult> AddMember(Guid id, AddMemberRequest request)
     {
-        var stokvel = await _store.GetStokvelByIdAsync(id);
-        if (stokvel is null)
-        {
-            // The stokvel itself doesn't exist — 404.
-            return NotFound("Stokvel not found.");
-        }
+        var result = await _membershipService.AddMemberAsync(id, request.UserId);
 
-        var user = await _store.GetUserByIdAsync(request.UserId);
-        if (user is null)
+        return result.Status switch
         {
-            // You can't add a user who doesn't exist — also 404, but for
-            // a DIFFERENT reason. The message clarifies which one failed.
-            return NotFound("User not found.");
-        }
-
-        try
-        {
-            // The "no duplicate members" rule lives on Stokvel.AddMember
-            // itself (see the Models walkthrough) — the controller just
-            // calls it and reacts.
-            stokvel.AddMember(request.UserId);
-            return NoContent(); // 204 — membership added, nothing to return
-        }
-        catch (InvalidOperationException ex)
-        {
-            // THIS is your "meaningful failure beyond not-found":
-            // both resources exist, the request is well-formed, but the
-            // OPERATION conflicts with the current state (already a member).
-            // 409 Conflict is the semantically correct code for that —
-            // not 400 (the request wasn't malformed) and not 404
-            // (everything referenced does exist).
-            return Conflict(ex.Message);
-        }
+            ServiceResultStatus.Success => NoContent(),
+            _ => this.ToProblem(result.Status, result.ErrorMessage)
+        };
     }
 
-    // DELETE /api/stokvels/{id}/members/{userId}
-    // Purpose: remove a member from a stokvel. Two ids in the route because
-    // we're identifying a specific membership relationship, not a standalone
-    // resource — this is the "nested relationship, resource-oriented" routing
-    // the brief asks for.
-    [HttpDelete("{id}/members/{userId}")]
-    public async Task<IActionResult> RemoveMember(Guid id, Guid userId)
+    [HttpPost("{id}/contributions")]
+    public async Task<IActionResult> RecordContribution(
+        Guid id,
+        [FromHeader(Name = "Idempotency-Key")] string idempotencyKey,
+        ContributionRequest request)
     {
-        var stokvel = await _store.GetStokvelByIdAsync(id);
-        if (stokvel is null)
-        {
-            return NotFound("Stokvel not found.");
-        }
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+            // Missing header — malformed request, 400.
+            return Problem(detail: "An Idempotency-Key header is required.", statusCode: StatusCodes.Status400BadRequest);
 
-        try
+        var result = await _contributionService.ExecuteAsync(id, idempotencyKey, request);
+
+        return result.Status switch
         {
-            stokvel.RemoveMember(userId);
-            return NoContent();
-        }
-        catch (InvalidOperationException ex)
-        {
-            // "This user isn't a member" — arguably could be 404 instead
-            // of 409 here; both are defensible. 404 might read cleaner
-            // since it's "that membership doesn't exist to remove."
-            // Pick one and justify it in your README — this is exactly
-            // the kind of judgment call the assignment wants you to make
-            // and explain, not get "right" from a fixed answer key.
-            return NotFound(ex.Message);
-        }
+            ServiceResultStatus.Success => CreatedAtAction(nameof(GetById), new { id }, result.Data),
+            _ => this.ToProblem(result.Status, result.ErrorMessage)
+        };
     }
 }
