@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("RondiTrack")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b7660a63e2975f129ecd2dc39ea5465ccbcedb76")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+41b730de9af9723c0bffe8ec402907c5e5272dff")]
 [assembly: System.Reflection.AssemblyProductAttribute("RondiTrack")]
 [assembly: System.Reflection.AssemblyTitleAttribute("RondiTrack")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
