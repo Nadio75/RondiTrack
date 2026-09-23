@@ -1,6 +1,8 @@
 using Scalar.AspNetCore;    
+using FluentValidation;
 using RondiTrack.Data;
 using RondiTrack.Services;
+using RondiTrack.Validation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,12 +20,40 @@ builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
 // which are already singletons — so these are registered as Scoped.
 builder.Services.AddScoped<StokvelMembershipService>();
 builder.Services.AddScoped<RecordContributionService>();
-
+// Registers our handler; if it's ever NOT the one that ends up formatting a response
+// (shouldn't happen, since it always returns true), AddProblemDetails() is the fallback
+// that still guarantees a problem+json shape.
+builder.Services.AddExceptionHandler<RondiTrack.Exceptions.RondiTrackExceptionHandler>();
 builder.Services.AddProblemDetails();
+
+// Auto-registers every AbstractValidator<T> in this project — no need to list them by hand.
+// Register validators from this assembly without requiring the FluentValidation
+// dependency-injection extension package.
+foreach (var validator in typeof(Program).Assembly.GetTypes()
+    .Where(type => !type.IsAbstract && !type.IsInterface)
+    .SelectMany(type => type.GetInterfaces()
+        .Where(service => service.IsGenericType &&
+            service.GetGenericTypeDefinition() == typeof(IValidator<>))
+        .Select(service => new { service, implementation = type })))
+{
+    builder.Services.AddTransient(validator.service, validator.implementation);
+}
+
+// Runs ValidationFilter on every controller action, before the action body executes.
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<ValidationFilter>();
+});
+
+//builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
 // --- Middleware pipeline (after Build(), before Run()) ---
+
+// Must come before anything that could throw — this is what actually invokes
+// RondiTrackExceptionHandler whenever an action, filter, or piece of middleware throws.
+app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
 {

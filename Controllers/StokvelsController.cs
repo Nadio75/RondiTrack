@@ -5,7 +5,7 @@ using RondiTrack.Data;
 using RondiTrack.Models;
 using RondiTrack.Mapping;
 using RondiTrack.Services;
-using RondiTrack.Extensions;
+using RondiTrack.Exceptions;
 
 [ApiController]
 [Route("api/stokvels")]
@@ -36,83 +36,73 @@ public class StokvelsController : ControllerBase
     public async Task<ActionResult<StokvelResponse>> GetById(Guid id)
     {
         var stokvel = await _store.GetStokvelByIdAsync(id);
-        return stokvel is null
-            ? this.ToProblem(ServiceResultStatus.NotFound, "Stokvel not found.")
-            : Ok(StokvelMapper.ToResponse(stokvel));
+        if (stokvel is null) throw new NotFoundException("Stokvel not found.");
+        return Ok(StokvelMapper.ToResponse(stokvel));
     }
 
     [HttpPost]
     public async Task<ActionResult<StokvelResponse>> Create(CreateStokvelRequest request)
     {
+        Stokvel stokvel;
         try
         {
-            var stokvel = new Stokvel(request.Name, request.ContributionAmount);
-            await _store.AddStokvelAsync(stokvel);
-            var response = StokvelMapper.ToResponse(stokvel);
-            return CreatedAtAction(nameof(GetById), new { id = stokvel.Id }, response);
+            stokvel = new Stokvel(request.Name, request.ContributionAmount);
         }
         catch (ArgumentException ex)
         {
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            throw new BusinessRuleViolationException(ex.Message);
         }
+
+        await _store.AddStokvelAsync(stokvel);
+        var response = StokvelMapper.ToResponse(stokvel);
+        return CreatedAtAction(nameof(GetById), new { id = stokvel.Id }, response);
     }
 
     [HttpPut("{id}")]
     public async Task<ActionResult<StokvelResponse>> Update(Guid id, CreateStokvelRequest request)
     {
         var stokvel = await _store.GetStokvelByIdAsync(id);
-        if (stokvel is null)
-            return this.ToProblem(ServiceResultStatus.NotFound, "Stokvel not found.");
+        if (stokvel is null) throw new NotFoundException("Stokvel not found.");
 
         try
         {
             stokvel.Rename(request.Name);
             stokvel.UpdateContributionAmount(request.ContributionAmount);
-            return Ok(StokvelMapper.ToResponse(stokvel));
         }
         catch (ArgumentException ex)
         {
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            throw new BusinessRuleViolationException(ex.Message);
         }
+
+        return Ok(StokvelMapper.ToResponse(stokvel));
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
         var deleted = await _store.DeleteStokvelAsync(id);
-        return deleted
-            ? NoContent()
-            : this.ToProblem(ServiceResultStatus.NotFound, "Stokvel not found.");
+        if (!deleted) throw new NotFoundException("Stokvel not found.");
+        return NoContent();
     }
 
     [HttpPost("{id}/members")]
     public async Task<IActionResult> AddMember(Guid id, AddMemberRequest request)
     {
-        var result = await _membershipService.AddMemberAsync(id, request.UserId);
-
-        return result.Status switch
-        {
-            ServiceResultStatus.Success => NoContent(),
-            _ => this.ToProblem(result.Status, result.ErrorMessage)
-        };
+        // No switch, no ToProblem — if this throws, the handler answers. If it doesn't, it worked.
+        await _membershipService.AddMemberAsync(id, request.UserId);
+        return NoContent();
     }
 
     [HttpPost("{id}/contributions")]
     public async Task<IActionResult> RecordContribution(
         Guid id,
-        [FromHeader(Name = "Idempotency-Key")] string idempotencyKey,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         ContributionRequest request)
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
-            // Missing header — malformed request, 400.
-            return Problem(detail: "An Idempotency-Key header is required.", statusCode: StatusCodes.Status400BadRequest);
+            throw new BusinessRuleViolationException("An Idempotency-Key header is required.");
 
-        var result = await _contributionService.ExecuteAsync(id, idempotencyKey, request);
-
-        return result.Status switch
-        {
-            ServiceResultStatus.Success => CreatedAtAction(nameof(GetById), new { id }, result.Data),
-            _ => this.ToProblem(result.Status, result.ErrorMessage)
-        };
+        var response = await _contributionService.ExecuteAsync(id, idempotencyKey, request);
+        return CreatedAtAction(nameof(GetById), new { id }, response);
     }
 }
