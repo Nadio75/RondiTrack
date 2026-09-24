@@ -1,3 +1,4 @@
+// Services/RecordContributionService.cs
 namespace RondiTrack.Services;
 
 using System.Security.Cryptography;
@@ -12,20 +13,21 @@ public class RecordContributionService
 {
     private readonly IStokvelStore _stokvelStore;
     private readonly IContributionStore _contributionStore;
+    private readonly IContributionCycleStore _cycleStore;
     private readonly IIdempotencyStore _idempotencyStore;
 
     public RecordContributionService(
         IStokvelStore stokvelStore,
         IContributionStore contributionStore,
+        IContributionCycleStore cycleStore,
         IIdempotencyStore idempotencyStore)
     {
         _stokvelStore = stokvelStore;
         _contributionStore = contributionStore;
+        _cycleStore = cycleStore;
         _idempotencyStore = idempotencyStore;
     }
 
-    // Return type is now the actual response, not a wrapper — success just means "returned
-    // normally." Every failure path throws instead.
     public async Task<ContributionResponse> ExecuteAsync(
         Guid stokvelId, string idempotencyKey, ContributionRequest request)
     {
@@ -38,7 +40,6 @@ public class RecordContributionService
                 throw new IdempotencyConflictException(
                     "This Idempotency-Key was already used with a different request.");
 
-            // Same key, same payload — replay the exact original response.
             return JsonSerializer.Deserialize<ContributionResponse>(existing.ResponseBodyJson)!;
         }
 
@@ -50,14 +51,20 @@ public class RecordContributionService
         if (!stokvel.MemberIds.Contains(request.UserId))
             throw new NotFoundException("This user is not a member of this stokvel.");
 
-        var duplicate = await _contributionStore.FindAsync(stokvelId, request.UserId, request.CycleMonth);
+        // New check: the cycle being paid into has to actually exist, and has to belong
+        // to THIS stokvel — not just any stokvel's cycle.
+        var cycle = await _cycleStore.GetByIdAsync(request.ContributionCycleId);
+        if (cycle is null || cycle.StokvelId != stokvelId)
+            throw new NotFoundException("This contribution cycle does not exist for this stokvel.");
+
+        var duplicate = await _contributionStore.FindAsync(stokvelId, request.UserId, request.ContributionCycleId);
         if (duplicate is not null)
             throw new ConflictException("This member has already paid for this cycle.");
 
         Contribution contribution;
         try
         {
-            contribution = new Contribution(stokvelId, request.UserId, request.Amount, request.CycleMonth);
+            contribution = new Contribution(stokvelId, request.UserId, request.Amount, request.ContributionCycleId);
         }
         catch (ArgumentException ex)
         {
