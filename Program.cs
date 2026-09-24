@@ -15,6 +15,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddSingleton<IStokvelStore, InMemoryStokvelStore>();
 builder.Services.AddSingleton<IContributionStore, InMemoryContributionStore>();
 builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
+builder.Services.AddSingleton<IContributionCycleStore, InMemoryContributionCycleStore>();
 
 // Services hold no state of their own — they just orchestrate the stores above,
 // which are already singletons — so these are registered as Scoped.
@@ -73,3 +74,6 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+// Makes the implicit top-level Program class visible to the test project,
+// so WebApplicationFactory<Program> can spin the whole app up for tests.
+public partial class Program { }

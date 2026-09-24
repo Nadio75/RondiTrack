@@ -6,6 +6,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+   <ItemGroup>
+    <Compile Remove="RondiTrack.Tests\**" />
+    <Content Remove="RondiTrack.Tests\**" />
+    <EmbeddedResource Remove="RondiTrack.Tests\**" />
+    <None Remove="RondiTrack.Tests\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />

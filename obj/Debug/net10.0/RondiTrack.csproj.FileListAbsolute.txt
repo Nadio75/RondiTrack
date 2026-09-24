@@ -6,6 +6,7 @@ C:\Users\User\RondiTrack\bin\Debug\net10.0\RondiTrack.deps.json
 C:\Users\User\RondiTrack\bin\Debug\net10.0\RondiTrack.runtimeconfig.json
 C:\Users\User\RondiTrack\bin\Debug\net10.0\RondiTrack.dll
 C:\Users\User\RondiTrack\bin\Debug\net10.0\RondiTrack.pdb
+C:\Users\User\RondiTrack\bin\Debug\net10.0\FluentValidation.dll
 C:\Users\User\RondiTrack\bin\Debug\net10.0\Microsoft.AspNetCore.OpenApi.dll
 C:\Users\User\RondiTrack\bin\Debug\net10.0\Microsoft.OpenApi.dll
 C:\Users\User\RondiTrack\bin\Debug\net10.0\Scalar.AspNetCore.dll
@@ -33,4 +34,3 @@ C:\Users\User\RondiTrack\obj\Debug\net10.0\refint\RondiTrack.dll
 C:\Users\User\RondiTrack\obj\Debug\net10.0\RondiTrack.pdb
 C:\Users\User\RondiTrack\obj\Debug\net10.0\RondiTrack.genruntimeconfig.cache
 C:\Users\User\RondiTrack\obj\Debug\net10.0\ref\RondiTrack.dll
-C:\Users\User\RondiTrack\bin\Debug\net10.0\FluentValidation.dll

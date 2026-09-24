@@ -307,3 +307,168 @@ error messages easy to mistake for something wrong with the design.
 Worth separating "does the compiler accept this" from "does the app
 actually start and behave correctly" when debugging — a successful
 build is necessary but not sufficient.
+
+## Assignment 4.3
+## Validation vs Exceptions
+
+Every request DTO now has a validator that runs before anything else happens. These validators only check whether a request is shaped properly — is a name actually filled in, is an amount a positive number, does a date look like a real date. 
+
+They never look anything up in the data, and they never care whether a stokvel or user actually exists. If a request fails one of these checks, it never even reaches a controller or a service — it gets rejected straight away with a message explaining what's wrong.
+
+Everything else — checking whether a record actually exists, or whether an action is allowed given what's already happened is handled by throwing an exception instead. 
+
+The difference is really about timing and what kind of question is being asked. Validation asks "is this request even written properly?" before anything real happens. Exceptions get thrown once we've already started doing real work and discover something that isn't allowed — like a stokvel that doesn't exist, or a member who already paid this month.
+
+Put simply: validation catches mistakes in how a request was written, exceptions catch reasons an otherwise well-written request still can't go through.
+
+## The Exception Hierarchy
+
+Four exception types cover every way a request can fail once it's already passed validation. 
+
+A not-found exception is used any time something a request refers to — a stokvel, a user, a contribution cycle — simply doesn't exist.
+
+A conflict exception is used when a request is technically fine but contradicts something that's already true, like trying to join a stokvel a person is already part of, or paying for a cycle that's already been paid.
+
+A separate idempotency-conflict exception exists specifically for when someone reuses the same idempotency key but sends a different request body the second time. 
+
+And a business-rule exception is used for anything that passes basic validation but still breaks a rule the system cares about, like an amount that's technically a number but isn't allowed to be zero or negative.
+
+The idempotency-key conflict got its own exception type on purpose, even though it currently results in the same status code as a normal conflict.
+
+The reasoning is that these two situations aren't really the same kind of problem. 
+
+A duplicate contribution is about something that's already true in the real world — this person already paid. 
+
+An idempotency-key conflict isn't about stokvels or payments at all it's about someone reusing a retry key incorrectly, which is a completely different kind of mistake. 
+
+Keeping them as separate exception types means if the system ever needs to treat them differently later — different logging, a different message, maybe even a different status code down the line — that decision is already easy to make, because the code already tells the two situations apart.
+
+## Every failure goes through one place now
+
+Instead of each controller building its own error response by hand, every exception thrown anywhere in the app gets caught by a single handler. 
+
+That handler decides what status code to send back, writes a log entry, and builds the response in the same consistent shape every time. This means no controller action needs to know anything about HTTP status codes anymore it just does its job and either succeeds or throws, and the handler takes care of turning that into something the caller can understand. 
+
+All of the old hand-written error responses from earlier in the project were removed once this was in place, so there's now exactly one place responsible for turning a failure into a response.
+
+## ContributionCycle — did it need a service?
+
+ContributionCycle didn't end up needing its own service. Everything it actually requires is a straightforward lookup followed by a decision that only depends on one thing at a time — does the stokvel exist, and does a cycle for that period already exist. Neither of those is really a decision in the way earlier features needed one. Adding a member or recording a contribution both involved weighing multiple related facts together before deciding what to do. Creating a contribution cycle doesn't — it's really just "check one thing, then either allow it or reject it," which a controller talking directly to the data store can handle perfectly well on its own.
+
+Giving it a service anyway would have just added an extra layer of code that didn't actually do anything a controller couldn't already do cleanly, so it was left out.
+
+## Correlation IDs
+
+Every error response now comes back with an ID attached to it, and that same ID also appears in the matching log entry on the server. 
+
+The idea is that if something goes wrong, the ID from the response a user saw can be used to find the exact matching entry in the logs, instead of having to guess which log line belongs to which request. For example, a failed request that returns a "stokvel not found" error will include something like correlationId: 0HN7F8G3K2J1L:00000001 in its response body, and the server log for that same request will show a line like "Handled NotFoundException: Stokvel not found. [correlationId=0HN7F8G3K2J1L:00000001]"
+— same id, both places. That's what makes it possible to trace a specific failure back to exactly what happened on the server, rather than just knowing that something, somewhere, went wrong.
+
+## Negative-Path Tests
+
+A small xUnit test project sits alongside the main project and proves that the error handling actually works the way it's supposed to, not just that it looks right in Scalar. 
+
+There are four tests in total. One sends a stokvel-creation request with an empty name and a negative amount, and checks that it comes back as a 400 with the problem+json content type — this is checking that FluentValidation is actually running and rejecting bad input before anything else happens. Another asks for a stokvel using a random id that was never created, and checks that it comes back as a 404 with the same problem+json shape — this proves a not-found exception actually reaches the centralized handler correctly. The third one creates a real stokvel, creates a contribution cycle for it, then tries to create the exact same cycle again, and checks that the second attempt comes back as a 409 — this proves a genuine business-rule conflict gets caught and handled
+the same way as everything else. 
+
+Together these three cover a different layer of the system each — the very first check a request goes through, something further down that depends on the data store, and an actual rule
+about what's allowed to happen twice. If any of the routing between validation, the exception hierarchy, and the handler ever broke, one of these tests would fail and say exactly why.
+
+These tests actually caught a real bug while they were being written — an earlier version of the exception handler was quietly returning application/json instead of application/problem+json on every single error response, because of how a built-in .NET method behaves when you set a content type by hand right before calling it. The two tests checking for problem+json failed immediately and pointed straight at the exact line causing it, which is exactly the kind of regression this kind of test is meant to catch before it ships.
+
+## Scalar Demonstration
+
+Three real requests and their real responses, run directly against the
+running app through Scalar, showing the same problem+json shape holding up
+across a malformed request, a missing resource, and a business-rule
+conflict.
+
+### A malformed request (400)
+
+**Request:** `POST /api/stokvels`
+
+```json
+{
+  "name": "639c7141-83f9-4c5f-b965-e10e3d4cac14",
+  "contributionAmount": -5
+}
+```
+
+**Response:**
+
+```json
+{
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": {
+    "ContributionAmount": [
+      "Contribution amount must be greater than zero."
+    ]
+  }
+}
+```
+
+This request never reached a controller or the exception hierarchy at all
+— FluentValidation rejected it before anything else ran, which is why the shape here is slightly different (an `errors` object listing every broken
+field) from the other two below, which come from the centralized exception
+handler instead.
+
+### A request for something that doesn't exist (404)
+
+**Request:** `GET /api/stokvels/630c7141-83f9-4c5f-b965-e10e3d4cac14`
+
+(a well-formed GUID that was never created)
+
+**Response:**
+
+```json
+{
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Stokvel not found.",
+  "correlationId": "0HNOPQOLK2QFB:0000000A"
+}
+```
+
+### A business-rule conflict (409)
+
+**Request:** `POST /api/stokvels/639c7141-83f9-4c5f-b965-e10e3d4cac14/cycles`,
+sent twice with the same period:
+
+```json
+{
+  "period": "2026-09",
+  "targetAmount": 1
+}
+```
+
+**Response (on the second attempt):**
+
+```json
+{
+  "title": "Conflict",
+  "status": 409,
+  "detail": "A contribution cycle for this period already exists for this stokvel.",
+  "correlationId": "0HNOPQOLK2QFD:00000002"
+}
+```
+
+The first attempt succeeded and created the cycle; the second attempt hit
+`ConflictException` because a cycle for that exact stokvel and period already existed — proving the duplicate-period rule is actually enforced, not just implemented and untested.
+
+## Correlation ID Walkthrough
+
+Here is one real response from the app next to the exact log line it produced on the server, showing the same id appearing in both places. This uses the 404 case above.
+
+**Response body:**
+
+```json
+{
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Stokvel not found.",
+  "correlationId": "0HNOPQOLK2QFB:0000000A"
+}
+```
+
+**Matching server log line:**
