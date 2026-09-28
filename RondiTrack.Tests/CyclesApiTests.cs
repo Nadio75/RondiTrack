@@ -143,4 +143,28 @@ public class CyclesApiTests : IClassFixture<WebApplicationFactory<Program>>
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
+
+        [Fact]
+    public async Task Updating_a_cycle_with_an_invalid_body_returns_400_even_when_the_cycle_does_not_exist()
+    {
+        var stokvel = await _client.CreateStokvelAsync();
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/stokvels/{stokvel.Id}/cycles/{Guid.NewGuid()}",
+            new { period = "not-a-period", targetAmount = 0 });
+
+        response.AssertProblem(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Updating_a_cycle_that_does_not_exist_returns_404()
+    {
+        var stokvel = await _client.CreateStokvelAsync();
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/stokvels/{stokvel.Id}/cycles/{Guid.NewGuid()}",
+            new { period = "2026-10", targetAmount = 1200 });
+
+        response.AssertProblem(HttpStatusCode.NotFound);
+    }
 }
