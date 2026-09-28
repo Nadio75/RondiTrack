@@ -472,3 +472,78 @@ Here is one real response from the app next to the exact log line it produced on
 ```
 
 **Matching server log line:**
+
+## Assignment 4.4 — Documentation & Testing
+
+This assignment added no endpoints and no rules. It documents every endpoint from 4.1 to 4.3 in Scalar (summary, guarantees, examples, and every realistic problem+json response) and adds a test suite in two layers: unit tests with no HTTP or DI container, and integration tests through `WebApplicationFactory` with the real validation, service layer and exception handler.
+
+### Definition of Done
+
+| # | Endpoint | Documented | Validated | Unit-tested (which rule) | Integration-tested (which cases) | Status codes reviewed |
+|---|---|---|---|---|---|---|
+| 1 | `GET /api/users` | yes | n/a (no input) | no (no rule, pure read) | 200 lists a created user | yes |
+| 2 | `GET /api/users/{id}` | yes | yes (route must be a GUID) | no (no rule, pure read) | 200, 400 bad GUID, 404 | yes |
+| 3 | `POST /api/users` | yes | yes (name required, max 100; contact number exactly 10 digits) | no (see gaps) | 201 + Location, 400 bad number, 400 blank name | yes |
+| 4 | `PUT /api/users/{id}` | yes | yes (same as create) | no (see gaps) | 200, 400 before lookup, 404 | yes |
+| 5 | `DELETE /api/users/{id}` | yes | yes (route must be a GUID) | no (no rule) | 204, then 404 on second delete | yes |
+| 6 | `GET /api/stokvels` | yes | n/a (no input) | no (no rule, pure read) | 200 lists a created stokvel | yes |
+| 7 | `GET /api/stokvels/{id}` | yes | yes (route must be a GUID) | no (no rule, pure read) | 200, 400 bad GUID, 404 | yes |
+| 8 | `POST /api/stokvels` | yes | yes (name required, max 100; amount > 0) | yes: amount must be > 0, starts with no members | 201 + Location + zero members, 400 x3, name boundary 100/101 | yes |
+| 9 | `PUT /api/stokvels/{id}` | yes | yes (same as create) | partly (amount rule via constructor only) | 200, 400 before lookup, 404 | yes |
+| 10 | `DELETE /api/stokvels/{id}` | yes | yes (route must be a GUID) | no (no rule) | 204, then 404; cycles unreachable afterwards | yes |
+| 11 | `POST /api/stokvels/{id}/members` | yes | yes (userId not empty GUID) | yes: membership rule (join once, both must exist) | 204 + member count, 409, 404 user, 404 stokvel, 400 empty GUID | yes |
+| 12 | `POST /api/stokvels/{id}/contributions` | yes | yes (userId, cycle id not empty; amount > 0; header present) | yes: membership, cycle ownership, duplicate contribution, idempotency-key comparison | 201 + Location, 400 x2, 422 no key, 404 x3, 409 duplicate; 4 idempotency tests; 3 edge cases | yes |
+| 13 | `GET /api/stokvels/{id}/cycles` | yes | yes (route must be a GUID) | no (no rule, pure read) | 200 only this stokvel's cycles, 200 empty array, 404 | yes |
+| 14 | `GET /api/stokvels/{id}/cycles/{cycleId}` | yes | yes (routes must be GUIDs) | no (no rule, pure read) | 200, 404 unknown cycle, 404 via wrong stokvel | yes |
+| 15 | `POST /api/stokvels/{id}/cycles` | yes | yes (period `YYYY-MM`; target > 0) | partly (target and period entity rules) | 201 + Location, 400 x3, 404, 409 duplicate period, month boundaries | yes |
+| 16 | `PUT /api/stokvels/{id}/cycles/{cycleId}` | yes | yes (same as create) | no (see gaps) | 200, 400 before lookup, 404 | yes |
+| 17 | `DELETE /api/stokvels/{id}/cycles/{cycleId}` | yes | yes (routes must be GUIDs) | no (no rule) | 204, then 404; paying a deleted cycle gives 404 | yes |
+
+Rows where "Unit-tested" says "no (no rule)" are deliberate: those endpoints only read or remove data, so there is no business decision for a unit test to prove. Their behaviour is covered by the integration tests.
+
+### Edge cases
+
+| Edge case | How I found it | What the test asserts |
+|---|---|---|
+| Empty collection | Reading the list-cycles controller, the stokvel is checked before the list is fetched, which raised the question of what a real stokvel with no cycles returns. | `200` with an empty array, not `404`. |
+| Boundary values | I read each validator's limits (the month pattern, the 100-character name limit, `amount > 0`) and tested both sides of every limit. | `2026-01` and `2026-12` are accepted; `2026-00`, `2026-13` and `2026-9` are rejected; a 100-character name is accepted and a 101-character one is rejected; `0.01` is accepted and `0` is rejected. |
+| A valid request that depends on another resource | I read the contribution service and asked what each rule depends on: the cycle must exist and belong to this stokvel. | A real cycle cannot be fetched through another stokvel's route (`404`); a valid contribution to a deleted cycle gives `404`; cycles cannot be listed once their stokvel is deleted (`404`). |
+
+### Test run
+
+`dotnet test --logger "console;verbosity=detailed"` on the final commit:
+
+```
+Passed!  - Failed:     0, Passed:   101, Skipped:     0, Total:   101, Duration: 1 s - RondiTrack.Tests.dll (net10.0)
+Test summary: total: 101, failed: 0, succeeded: 101, skipped: 0, duration: 4,3s
+```
+
+Every test by name:
+
+```
+Passed RondiTrack.Tests.ContributionsApiTests.A_member_who_already_paid_a_cycle_cannot_pay_it_again_with_a_new_key_and_gets_409 [20 ms]
+Passed RondiTrack.Tests.ContributionsApiTests.A_user_who_is_not_a_member_of_the_stokvel_cannot_contribute_and_gets_404 [17 ms]
+... (all 101 lines from test-run.txt, sorted by test class)
+```
+
+101 tests, 0 failed: 34 unit tests (no HTTP, no DI container) and 67 integration tests (through `WebApplicationFactory`, with validation, service layer and exception handler all running).
+
+### Rule deliberately broken
+
+I commented out the `RequestHash` comparison in `RecordContributionService.ExecuteAsync`, so a reused Idempotency-Key with a different body was no longer rejected. Four tests went red: three unit tests (`Reusing_a_key_with_a_different_amount_...`, `Reusing_a_key_with_a_different_cycle_...`, `A_rejected_key_reuse_records_nothing_new`) and one integration test (`The_same_key_with_a_different_amount_is_rejected_with_409`). I restored the file with `git restore` and the suite returned to all green.
+
+### Gaps the audit surfaced and I did not close
+
+- **Updating a cycle can create a duplicate period.** Creating a cycle returns `409` for a repeated period, but `PUT` does not check. This is written into the endpoint's description in Scalar. Fixing it would add a new business rule, which this assignment forbids, so it belongs in a future assignment.
+
+- **The idempotency key is compared with the request body only, not the stokvel id in the URL.** Documented in Scalar for the same reason.
+
+- **Scalar shows the `Idempotency-Key` header as optional though it is required** (a missing one gives `422`). Changing that would change the code, so the description says it in words.
+
+- **Deleting leaves related data behind.** Deleting a stokvel leaves its cycles and contributions unreachable but stored; deleting a cycle leaves its contributions; deleting a user leaves them counted in any stokvel's `memberCount`, although they can no longer contribute (`404`). These need persistence and relationships to fix properly, which is Week 5.
+
+- **No unit tests for `User` entity rules.** Its rules are shape rules already enforced by the validator and proven by the integration tests; adding a separate unit test would repeat the same check.
+
+- **Idempotency keys live in memory.** They are lost on restart and never expire.
+
+- **The `422` responses from the entity `catch` blocks are unreachable through the API**, because validation rejects the same input with `400` first. Only the missing-header `422` can be triggered.
