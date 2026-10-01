@@ -16,6 +16,8 @@ public class User
 
     public string ContactNumber { get; private set; }
 
+    private User() { } // EF Core materializes instances via this, writing straight to the backing fields
+
     // Constructor: this runs every time a new User is created.
     // We put our validation HERE instead of in the controller because this
     // way, it is IMPOSSIBLE to create a User object that breaks these rules —

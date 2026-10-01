@@ -547,3 +547,153 @@ I commented out the `RequestHash` comparison in `RecordContributionService.Execu
 - **Idempotency keys live in memory.** They are lost on restart and never expire.
 
 - **The `422` responses from the entity `catch` blocks are unreachable through the API**, because validation rejects the same input with `400` first. Only the missing-header `422` can be triggered.
+
+## Assignment 5.1 — EF Core & Database Foundations
+
+This assignment replaced RondiTrack's in-memory storage with real PostgreSQL persistence for two of its four repositories, and added Payout as a new, minimal feature protected by an explicit database transaction. The goal set by the assignment was that nothing above the repository interfaces — no controller, no service signature, no DTO — would need to change for this to work. It didn't.
+
+### PostgreSQL setup
+
+I installed PostgreSQL natively on Windows (not Docker — Docker Desktop wasn't already on this machine, and a native Windows service install is a smaller, more reliable first step than adding WSL2 as a dependency on top of everything else this assignment already asks for). Version: **PostgreSQL 18.6** (confirmed with `SELECT version();` in `psql`, shown below).
+
+**How a teammate with a clean machine reproduces this from nothing:**
+
+1. Download the Windows installer from [postgresql.org/download/windows](https://www.postgresql.org/download/windows/) and run it.
+2. During install, set a password for the `postgres` superuser and keep the default port `5432`. The installer starts PostgreSQL automatically as a Windows service — no separate "start the database" step is needed afterward.
+3. On the final screen, Stack Builder opens offering extra add-ons (pgAdmin, drivers, PostGIS, etc.). None of these are needed for RondiTrack — click **Cancel**.
+4. Open **SQL Shell (psql)** from the Start menu. Press Enter through the connection prompts (Server, Database, Port, Username all default correctly) until prompted for the password, then enter it.
+5. Create a dedicated database — not the shared default `postgres` one:
+```sql
+   CREATE DATABASE "RondiTrackDb";
+   \c RondiTrackDb
+   SELECT version();
+```
+6. This is the proof-of-connectivity step the assignment asks for, done independently of the API — `psql` connecting and returning a real PostgreSQL version string, before a single line of EF Core code was written:
+```
+   RondiTrackDb=# SELECT version();
+                                    version
+   -------------------------------------------------------------------------
+    PostgreSQL 18.6 on x86_64-windows, compiled by msvc-19.44.35228, 64-bit
+   (1 row)
+```
+
+From here, the real connection string is `Host=localhost;Port=5432;Database=RondiTrackDb;Username=postgres;Password=<the password set in step 2>` — stored only in User Secrets, never committed (see below).
+
+### The mapping problem
+
+I hit two separate EF Core mapping issues, both on `Contribution`, `ContributionCycle`, `Stokvel`, and `User` — every entity whose only constructor is the validating one it always had, with no setters on any property.
+
+**First:** running `dotnet ef migrations add` failed outright with *"No suitable constructor was found for the type 'Contribution' — the following constructors had parameters that could not be bound to properties: stokvelId, userId, contributionCycleId."* EF Core's default materialization strategy tries to bind constructor parameters directly to properties by name, and couldn't resolve it for these read-only, Guid-typed parameters. The fix: I added a `private` parameterless constructor to each of the four entities. EF Core now materializes instances by writing straight to the compiler-generated backing fields, bypassing both the constructor and any setters — while every line of my own code still only ever calls the public, validating constructor. No validation was weakened.
+
+**Second, and more surprising:** after fixing the first issue, generated migrations were still silently dropping properties with no error at all — `ContributionCycle.CreatedAt` disappeared from the schema entirely, while a property of the identical shape (`StokvelId`) survived only because a `HasIndex` call happened to reference it. I confirmed this directly with `dotnet ef dbcontext script`, which showed the compiled model itself only contained properties explicitly touched somewhere in `OnModelCreating` — plain get-only auto-properties were not being picked up by convention once the private constructors were added. Rather than chase why convention discovery behaved this way, I configured every property on every entity explicitly in `OnModelCreating`, so nothing is left to a convention decision that behaved unpredictably once.
+
+*(Also worth being honest about: a chunk of the debugging time on this second issue was lost to repeatedly pasting the fix into the wrong open editor tab — `RondiTrackDbContextModelSnapshot.cs` instead of `RondiTrackDbContext.cs` — which looked identical to a stale-build problem until a direct `type` of the file on disk proved otherwise. Worth remembering for next time: verify a file's actual contents on disk before re-diagnosing.)*
+
+### Secret management
+
+The connection string, password included, is stored with **.NET User Secrets** and never appears in any file git tracks.
+
+```powershell
+dotnet user-secrets init
+dotnet user-secrets set "ConnectionStrings:RondiTrack" "Host=localhost;Port=5432;Database=RondiTrackDb;Username=postgres;Password=<your password>"
+```
+
+`dotnet user-secrets init` only adds a `<UserSecretsId>` GUID to `RondiTrack.csproj` — that's not a secret itself, just a pointer to a file under the Windows user profile (`%APPDATA%\Microsoft\UserSecrets\<id>\secrets.json`), which lives entirely outside the repository and can never be committed by accident. `appsettings.json` only declares the key with an empty value:
+
+```json
+{ "ConnectionStrings": { "RondiTrack": "" } }
+```
+
+A teammate cloning the repo runs the two commands above with their own local password, and the app picks the value up automatically in Development — zero secrets ever touch source control.
+
+### Retry configuration
+
+```csharp
+options.UseNpgsql(
+    builder.Configuration.GetConnectionString("RondiTrack"),
+    npgsqlOptions => npgsqlOptions.EnableRetryOnFailure(
+        maxRetryCount: 5,
+        maxRetryDelay: TimeSpan.FromSeconds(10),
+        errorCodesToAdd: null));
+```
+
+**5 retries, 10-second max delay.** Npgsql applies exponential backoff between attempts up to that cap, so this covers a brief network blip or a connection-pool-saturation spike within a few seconds, without holding an HTTP request open so long that a caller gives up and retries on their own, compounding the load.
+
+**One kind of failure this should retry:** the connection pool being briefly saturated under a burst of concurrent requests — transient, and very likely to succeed on the very next attempt with no change in the request itself.
+
+**One kind it deliberately shouldn't:** a unique constraint violation — for example, two attempts to add the same `StokvelMember` row, which `IX_StokvelMembers_StokvelId_UserId` rejects. This will fail identically every time it's retried; retrying it only adds latency before the same `409` reaches the caller.
+
+### Repository swapped
+
+I swapped **`IStokvelStore`** first — it backs `StokvelMembershipService` and `RecordContributionService`, the two files Assignment 4.4's unit tests exercise hardest (the membership rule, the duplicate-contribution rule, the idempotency-key comparison). It was the strongest available test of whether the repository interface actually held.
+
+Modeling Payout correctly then **forced a second swap: `IContributionCycleStore`**. Payout's explicit transaction has to protect two writes — a new `Payout` row and a `ContributionCycle.Status` update — and that guarantee is meaningless if one of those writes lands in an in-memory list instead of the same PostgreSQL transaction as the other. A transaction spanning a real database write and an in-memory write isn't a transaction at all. This wasn't planned as "at least one" repository; it became two because Payout genuinely couldn't be built correctly with only one.
+
+`IContributionStore` and `IIdempotencyStore` remain in-memory. This is a stated decision, not an oversight: today's scope was the repository with the most business logic, plus whatever Payout's transaction required — nothing more.
+
+The `DbContext` is registered `AddScoped`, in place of the `AddSingleton` every in-memory store used. `DbContext` is a unit of work with its own change tracker; it isn't thread-safe. A Singleton `DbContext` would mean every concurrent request shares one tracker, corrupting each other's in-flight changes and eventually deadlocking under real traffic — exactly the inverse of the in-memory stores' reasoning, where the collection *was* the database and had to outlive any single request. This isn't theoretical: .NET's own service-provider validation refused to even start the app the first time the lifetime mismatch existed, with the error naming the exact conflict — *"Cannot consume scoped service 'RondiTrackDbContext' from singleton 'IStokvelStore'."*
+
+### Before/after test run
+
+**Before the swap (Assignment 4.4, in-memory):** 101 passed, 0 failed.
+
+**After the swap, against real PostgreSQL:** 104 passed, 0 failed — 101 original tests plus 3 new Payout tests, confirmed running against the real database by direct SQL logging (`INSERT INTO "Stokvels"`, `INSERT INTO "StokvelMembers"`, `UPDATE "ContributionCycles" ... ; INSERT INTO "Payouts" ...` appearing in `dotnet test` output), not assumed from a green checkmark.
+
+**One test genuinely broke during the swap**, and it's a real finding, not noise: `Creating_a_cycle_returns_201_with_a_location_and_the_cycle_can_then_be_fetched` compared two whole `ContributionCycleResponse` records with `Assert.Equal`. `TargetAmount` is `decimal`, stored as `numeric(18,2)` in PostgreSQL — a value round-tripped through the database always carries two decimal places (`1000.00`), while the in-memory object right after construction does not (`1000`). The two are numerically equal (`1000m == 1000.00m` is `true`), but C# record equality uses `decimal.Equals`, which considers scale, so the whole-record comparison failed on a representation detail introduced purely by persistence — not a behavior change the API makes any promise about. I changed the test to compare `TargetAmount` with `==` instead of relying on whole-record equality, and left every other field comparison as-is.
+
+```
+dotnet test --logger "console;verbosity=detailed" — final run:
+
+Passed!  - Failed: 0, Passed: 104, Skipped: 0, Total: 104 - RondiTrack.Tests.dll (net10.0)
+
+
+### Payout
+
+Payout did not exist as a working feature before today — only as an entity name on the schema. The rotation rule I designed is deliberately minimal: **the next recipient is the member of the stokvel who joined earliest (`StokvelMember.JoinedAt` ascending) and has not yet received a payout from this stokvel.** First-come-first-served, no skipping, no scheduling, no partial payouts — exactly the scope the assignment asked for, nothing more.
+
+**What the transaction protects:** processing a payout is two writes that must succeed or fail together — inserting the new `Payout` row, and marking the `ContributionCycle`'s `Status` as `"PaidOut"`. If only one of these landed (a payout recorded against a cycle still marked `"Open"`, or a cycle marked paid out with no corresponding `Payout` row), the stokvel's payout history would silently disagree with itself. Both writes run inside one explicit `IDbContextTransaction`, itself wrapped in `CreateExecutionStrategy().ExecuteAsync(...)` so it composes correctly with `EnableRetryOnFailure` (a retried attempt can't open a second transaction on top of one already in progress).
+
+**Rollback test result:** the test forces a real failure — a stokvel with one member who has already been paid once, then a second payout attempt against a new cycle, where the rotation rule finds no eligible recipient and throws `BusinessRuleViolationException` after the transaction has begun but before either write happens. The test then re-queries the database directly, not the exception and not a status code, and confirms: `Payouts` has zero rows for the second cycle, and the second cycle's `Status` is still `"Open"`. Nothing partial was left behind. (Log excerpt showing the committed case for comparison — note the `UPDATE` and `INSERT` running as one batched statement on success:
+```
+UPDATE "ContributionCycles" SET "Status" = @p0 WHERE "Id" = @p1;
+INSERT INTO "Payouts" ("Id", "Amount", "ContributionCycleId", "ProcessedAt", "RecipientUserId", "StokvelId")
+VALUES (@p2, @p3, @p4, @p5, @p6, @p7);
+```
+)
+
+**One deliberate gap on the Payout endpoint:** "cycle already paid out" and "every member already paid" both currently return `400` (via `BusinessRuleViolationException`/`ConflictException` routed through the existing handler), rather than `409`. I chose to leave this as-is rather than add a dedicated exception type purely to change a status code on a brand-new, intentionally minimal endpoint — it's a one-line fix if a future assignment calls for stricter alignment with the rest of the API's conflict-handling pattern, but wasn't worth the scope creep today.
+
+### Definition of Done, extended
+
+Two columns added to the Assignment 4.4 table: **Persisted via EF Core** and **Explicit transaction tested**.
+
+| # | Endpoint | Documented | Validated | Unit-tested | Integration-tested | Status codes reviewed | Persisted via EF Core | Explicit transaction tested |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `GET /api/users` | yes | n/a | no | yes | yes | yes | N/A |
+| 2 | `GET /api/users/{id}` | yes | yes | no | yes | yes | yes | N/A |
+| 3 | `POST /api/users` | yes | yes | no | yes | yes | yes | N/A |
+| 4 | `PUT /api/users/{id}` | yes | yes | no | yes | yes | yes | N/A |
+| 5 | `DELETE /api/users/{id}` | yes | yes | no | yes | yes | yes | N/A |
+| 6 | `GET /api/stokvels` | yes | n/a | no | yes | yes | yes | N/A |
+| 7 | `GET /api/stokvels/{id}` | yes | yes | no | yes | yes | yes | N/A |
+| 8 | `POST /api/stokvels` | yes | yes | yes | yes | yes | yes | N/A |
+| 9 | `PUT /api/stokvels/{id}` | yes | yes | partly | yes | yes | yes | N/A |
+| 10 | `DELETE /api/stokvels/{id}` | yes | yes | no | yes | yes | yes | N/A |
+| 11 | `POST /api/stokvels/{id}/members` | yes | yes | yes | yes | yes | yes | N/A |
+| 12 | `POST /api/stokvels/{id}/contributions` | yes | yes | yes | yes | yes | **no** | N/A |
+| 13 | `GET /api/stokvels/{id}/cycles` | yes | yes | no | yes | yes | yes | N/A |
+| 14 | `GET /api/stokvels/{id}/cycles/{cycleId}` | yes | yes | no | yes | yes | yes | N/A |
+| 15 | `POST /api/stokvels/{id}/cycles` | yes | yes | partly | yes | yes | yes | N/A |
+| 16 | `PUT /api/stokvels/{id}/cycles/{cycleId}` | yes | yes | no | yes | yes | yes | N/A |
+| 17 | `DELETE /api/stokvels/{id}/cycles/{cycleId}` | yes | yes | no | yes | yes | yes | N/A |
+| 18 | `POST /api/stokvels/{id}/cycles/{cycleId}/payout` | yes | n/a | no | yes | yes | yes | **yes** |
+
+Row 12 is the one honest "no" that matters: contributions still go through `IContributionStore`, which remains in-memory. Every contribution recorded through the live API today does not survive a restart, even though the stokvel, user, membership, and cycle it refers to now do.
+
+### Gaps surfaced and not closed
+
+- **Contributions and idempotency keys are still in-memory** (`IContributionStore`, `IIdempotencyStore`). A restart loses every recorded contribution and every idempotency record, even though the stokvel/cycle/membership data it refers to now persists. Scoped to today's "swap the repository with the most business logic, plus whatever Payout needs" — not an oversight.
+- **Payout's "already paid out" / "everyone paid" conflicts return `400`, not `409`** — documented above, a one-line fix deferred rather than scope-crept into today.
+- **`PUT` on a cycle can still create a duplicate period** (carried over from 4.4, unchanged — `POST` checks, `PUT` doesn't).
+- **The idempotency key is still compared against the request body only, not the stokvel id in the URL** (carried over from 4.4, unchanged).
+- **No optimistic concurrency control yet.** Two simultaneous payout requests for the same cycle both read `Status = "Open"` before either commits; PostgreSQL's row-level locking inside the transaction prevents real corruption, but there's no `xmin`-based concurrency token yet — that's named explicitly as a later Week 5 topic in the assignment brief itself, so it's deferred on purpose, not missed.

@@ -21,7 +21,8 @@ public class StokvelMembershipService
 
         try
         {
-            stokvel.AddMember(userId);
+                    stokvel.AddMember(userId);
+        await _stokvelStore.AddMembershipAsync(stokvelId, userId);
         }
         catch (InvalidOperationException ex)
         {

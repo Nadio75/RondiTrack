@@ -11,18 +11,21 @@ using RondiTrack.Exceptions;
 [Route("api/stokvels")]
 public class StokvelsController : ControllerBase
 {
-    private readonly IStokvelStore _store;
+        private readonly IStokvelStore _store;
     private readonly StokvelMembershipService _membershipService;
     private readonly RecordContributionService _contributionService;
+    private readonly PayoutService _payoutService;
 
     public StokvelsController(
         IStokvelStore store,
         StokvelMembershipService membershipService,
-        RecordContributionService contributionService)
+        RecordContributionService contributionService,
+        PayoutService payoutService)
     {
         _store = store;
         _membershipService = membershipService;
         _contributionService = contributionService;
+        _payoutService = payoutService;
     }
 
     [HttpGet]
@@ -288,5 +291,26 @@ public class StokvelsController : ControllerBase
 
         var response = await _contributionService.ExecuteAsync(id, idempotencyKey, request);
         return CreatedAtAction(nameof(GetById), new { id }, response);
+    }
+
+        [HttpPost("{id}/cycles/{cycleId}/payout")]
+    [EndpointSummary("Process the next payout for a contribution cycle")]
+    [EndpointDescription("""
+        Determines the next eligible recipient — the member who joined this stokvel earliest
+        and has not yet received a payout from it — records a Payout for them, and marks the
+        cycle as paid out. Both writes happen inside one database transaction: either both
+        succeed, or neither is kept.
+
+        **Errors:** `404` if the stokvel or cycle does not exist, or the cycle does not belong
+        to this stokvel; `409` if the cycle has already been paid out, or every member has
+        already received a payout from this stokvel.
+        """)]
+    [ProducesResponseType<RondiTrack.Models.Dtos.PayoutResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> ProcessPayout(Guid id, Guid cycleId)
+    {
+        var payout = await _payoutService.ProcessAsync(id, cycleId);
+        return CreatedAtAction(nameof(GetById), new { id }, RondiTrack.Mapping.PayoutMapper.ToResponse(payout));
     }
 }

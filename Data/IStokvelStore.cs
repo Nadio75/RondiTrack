@@ -19,4 +19,7 @@ public interface IStokvelStore
     Task<Stokvel?> GetStokvelByIdAsync(Guid id);
     Task AddStokvelAsync(Stokvel stokvel);
     Task<bool> DeleteStokvelAsync(Guid id);
+        // Persists a membership relationally. Separate from Stokvel.AddMember(),
+    // which only mutates the in-memory object's MemberIds view.
+    Task AddMembershipAsync(Guid stokvelId, Guid userId);
 }
