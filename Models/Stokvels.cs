@@ -4,6 +4,7 @@ public class Stokvel
 {
     public Guid Id { get; }
     public string Name { get; private set; }
+    private Stokvel() { } // EF Core materializes instances via this, writing straight to the backing fields
 
     // decimal, not float or double, because this is money. 
     public decimal ContributionAmount { get; private set; }
@@ -84,6 +85,15 @@ public class Stokvel
         }
 
         _memberIds.Remove(userId);
+    }
+
+        // Used only by the EF Core repository to rebuild MemberIds after loading
+    // a Stokvel from the database. Nothing in Controllers, Services, or the
+    // public contract of Stokvel changes because of this — it's internal.
+    internal void LoadMembers(IEnumerable<Guid> memberIds)
+    {
+        _memberIds.Clear();
+        _memberIds.AddRange(memberIds);
     }
 
     public void UpdateContributionAmount(decimal newAmount)
