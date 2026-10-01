@@ -3,6 +3,7 @@ using FluentValidation;
 using RondiTrack.Data;
 using RondiTrack.Services;
 using RondiTrack.Validation;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,10 +13,17 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 // Our in-memory data stores, each shared as a single instance for the app's lifetime.
-builder.Services.AddSingleton<IStokvelStore, InMemoryStokvelStore>();
+builder.Services.AddScoped<IStokvelStore, EfStokvelStore>();
 builder.Services.AddSingleton<IContributionStore, InMemoryContributionStore>();
 builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
-builder.Services.AddSingleton<IContributionCycleStore, InMemoryContributionCycleStore>();
+builder.Services.AddScoped<PayoutService>();
+builder.Services.AddScoped<IContributionCycleStore, EfContributionCycleStore>();builder.Services.AddDbContext<RondiTrack.Data.RondiTrackDbContext>(options =>
+    options.UseNpgsql(
+        builder.Configuration.GetConnectionString("RondiTrack"),
+        npgsqlOptions => npgsqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorCodesToAdd: null)));
 
 // Services hold no state of their own — they just orchestrate the stores above,
 // which are already singletons — so these are registered as Scoped.

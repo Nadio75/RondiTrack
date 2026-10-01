@@ -93,4 +93,8 @@ public class InMemoryStokvelStore : IStokvelStore
         _stokvels.Remove(stokvel);
         return Task.FromResult(true);
     }
+        // No-op: the in-memory Stokvel object's MemberIds already IS the source
+    // of truth here, updated by stokvel.AddMember() in the service. There's
+    // no separate relational table to also write to.
+    public Task AddMembershipAsync(Guid stokvelId, Guid userId) => Task.CompletedTask;
 }
