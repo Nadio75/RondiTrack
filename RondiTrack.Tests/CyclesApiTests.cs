@@ -29,7 +29,11 @@ public class CyclesApiTests : IClassFixture<WebApplicationFactory<Program>>
 
         var fetched = await _client.GetFromJsonAsync<ContributionCycleResponse>(
             $"/api/stokvels/{stokvel.Id}/cycles/{created.Id}");
-        Assert.Equal(created, fetched);
+        Assert.Equal(created.Id, fetched!.Id);
+        Assert.Equal(created.StokvelId, fetched.StokvelId);
+        Assert.Equal(created.Period, fetched.Period);
+        Assert.True(created.TargetAmount == fetched.TargetAmount, $"Expected {created.TargetAmount}, got {fetched.TargetAmount}");
+        Assert.Equal(created.CreatedAt, fetched.CreatedAt);        
     }
 
     [Fact]
