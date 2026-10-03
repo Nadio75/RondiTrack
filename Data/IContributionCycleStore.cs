@@ -11,4 +11,5 @@ public interface IContributionCycleStore
     Task<ContributionCycle?> FindByStokvelAndPeriodAsync(Guid stokvelId, string period);
     Task AddAsync(ContributionCycle cycle);
     Task<bool> DeleteAsync(Guid id);
+        Task<ContributionCycle?> GetByIdReadOnlyAsync(Guid id);
 }
