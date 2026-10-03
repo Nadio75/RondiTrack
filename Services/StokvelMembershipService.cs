@@ -22,7 +22,7 @@ public class StokvelMembershipService
         try
         {
                     stokvel.AddMember(userId);
-        await _stokvelStore.AddMembershipAsync(stokvelId, userId);
+        await _stokvelStore.AddMembershipAsync(stokvelId, userId, "Member");
         }
         catch (InvalidOperationException ex)
         {

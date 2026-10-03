@@ -29,4 +29,5 @@ public class InMemoryContributionCycleStore : IContributionCycleStore
         _cycles.Remove(cycle);
         return Task.FromResult(true);
     }
+        public Task<ContributionCycle?> GetByIdReadOnlyAsync(Guid id) => GetByIdAsync(id);
 }

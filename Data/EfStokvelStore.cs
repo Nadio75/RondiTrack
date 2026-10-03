@@ -68,7 +68,7 @@ public class EfStokvelStore : IStokvelStore
 
     // Rebuilds each Stokvel's private MemberIds list from the real
     // relational table — the translation the MemberIds mapping decision needs.
-    private async Task HydrateMembersAsync(IReadOnlyCollection<Stokvel> stokvels)
+        private async Task HydrateMembersAsync(IReadOnlyCollection<Stokvel> stokvels)
     {
         var ids = stokvels.Select(s => s.Id).ToList();
         var members = await _db.StokvelMembers
@@ -76,8 +76,25 @@ public class EfStokvelStore : IStokvelStore
             .ToListAsync();
 
         foreach (var stokvel in stokvels)
-        {
             stokvel.LoadMembers(members.Where(m => m.StokvelId == stokvel.Id).Select(m => m.UserId));
-        }
+    }
+        public async Task AddMembershipAsync(Guid stokvelId, Guid userId, string role = "Member")
+    {
+        _db.StokvelMembers.Add(new StokvelMember(stokvelId, userId, role));
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task<StokvelMember?> GetMembershipAsync(Guid stokvelId, Guid userId) =>
+        await _db.StokvelMembers.FindAsync(userId, stokvelId); // composite key: order matches HasKey
+
+            public async Task<User?> GetUserByIdReadOnlyAsync(Guid id) =>
+        await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id);
+
+    public async Task<Stokvel?> GetStokvelByIdReadOnlyAsync(Guid id)
+    {
+        var stokvel = await _db.Stokvels.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
+        if (stokvel is null) return null;
+        await HydrateMembersAsync(new[] { stokvel });
+        return stokvel;
     }
 }

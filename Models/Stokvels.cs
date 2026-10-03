@@ -4,6 +4,8 @@ public class Stokvel
 {
     public Guid Id { get; }
     public string Name { get; private set; }
+    public ICollection<StokvelMember> Memberships { get; private set; } = new List<StokvelMember>();
+        public ICollection<ContributionCycle> ContributionCycles { get; private set; } = new List<ContributionCycle>();
     private Stokvel() { } // EF Core materializes instances via this, writing straight to the backing fields
 
     // decimal, not float or double, because this is money. 

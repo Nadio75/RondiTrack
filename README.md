@@ -697,3 +697,129 @@ Row 12 is the one honest "no" that matters: contributions still go through `ICon
 - **`PUT` on a cycle can still create a duplicate period** (carried over from 4.4, unchanged — `POST` checks, `PUT` doesn't).
 - **The idempotency key is still compared against the request body only, not the stokvel id in the URL** (carried over from 4.4, unchanged).
 - **No optimistic concurrency control yet.** Two simultaneous payout requests for the same cycle both read `Status = "Open"` before either commits; PostgreSQL's row-level locking inside the transaction prevents real corruption, but there's no `xmin`-based concurrency token yet — that's named explicitly as a later Week 5 topic in the assignment brief itself, so it's deferred on purpose, not missed.
+
+## Assignment 5.2 — Relationships & Query Behavior
+
+This assignment confronted a shortcut the schema had been taking since Assignment 5.1: every relationship in RondiTrack was a bare `Guid` that happened to match another table's primary key, with EF Core never told any of it meant anything. Today gave every real relationship — membership, cycle ownership, contribution-to-member — an actual, enforced shape, and separately measured and fixed a real N+1 query rather than guessing at one.
+
+### Why StokvelMember needed a composite key, not a surrogate one
+
+Membership isn't a bare link between a `User` and a `Stokvel` — it carries data of its own: `Role` and `JoinedAtUtc`. That's what makes it a real entity rather than an implicit many-to-many EF Core could build silently. Its natural identity is the pair `(UserId, StokvelId)`: a user can only belong to a given stokvel once, and that fact *is* the primary key, not something enforced separately on top of a surrogate `Guid Id` nobody would ever read from. A surrogate key here would have let the same user/stokvel pair exist twice in the table with two different synthetic ids — exactly the bug the natural key rules out at the database level, for free.
+
+**The FK question this raised:** `Contribution` and `Payout` both already stored the user and stokvel involved as two separate columns (`UserId`/`StokvelId` on `Contribution`, `RecipientUserId`/`StokvelId` on `Payout`) — which is exactly the shape of `StokvelMember`'s new composite key. Rather than add a new surrogate reference column to either entity, I configured a real, database-enforced composite foreign key on the columns that already existed:
+
+```csharp
+b.HasOne(c => c.Member)
+    .WithMany()
+    .HasForeignKey(c => new { c.UserId, c.StokvelId })
+    .HasPrincipalKey(m => new { m.UserId, m.StokvelId });
+```
+
+I considered giving `StokvelMember` a surrogate `Guid` back specifically so other entities would have something simpler to reference, but that would have undone the whole point of the exercise — it would mean the "real" identity (the pair) and the "referenced" identity (a surrogate) were two different things, which is exactly the kind of quiet inconsistency the assignment warns against.
+
+### What replaced generic repository access for StokvelMember
+
+RondiTrack never used a shared `IRepository<T>` pattern — each entity has its own dedicated store interface (`IStokvelStore`, `IContributionCycleStore`, etc.), so the specific risk the assignment describes (a generic `GetByIdAsync(Guid id)` breaking outright) never literally applied here. But the underlying principle did apply: before today, `StokvelMember` had no lookup method at all, only an `AddMembershipAsync`. The method added today is explicitly composite-keyed from the start:
+
+```csharp
+Task<StokvelMember?> GetMembershipAsync(Guid stokvelId, Guid userId);
+```
+
+never a bare single-Guid lookup that a later key change would have broken. `AddMembershipAsync` also gained a `role` parameter (defaulting to `"Member"`) so a membership's role is set at creation, matching the new column.
+
+### What I specifically checked reading this ALTER migration
+
+Unlike Assignment 5.1's `CREATE TABLE` migration, this one altered an existing table that already held real data from testing, so the checks were different:
+
+- **Confirmed it was a genuine `ALTER` sequence, not a drop-and-recreate.** The migration ran `DropPrimaryKey` → `DropIndex` → `DropColumn("Id")` → `RenameColumn("JoinedAt" → "JoinedAtUtc")` → `AddColumn("Role")` → `AddPrimaryKey` on the existing `StokvelMembers` table. A `DropTable`/`CreateTable` pair would have destroyed every existing row; this preserved them.
+- **Checked the new `Role` column's default value specifically**, because a `NOT NULL` column added to a table with existing rows needs a real default or the migration fails outright. The first generated migration used `defaultValue: ""` — technically valid SQL, but a silent data-quality problem, since every pre-existing row would get an empty string instead of a meaningful value. I added `.HasDefaultValue("Member")` to the property configuration and regenerated so existing rows got `Role = "Member"` instead.
+- **EF Core itself flagged the migration with "An operation was scaffolded that may result in the loss of data."** I read the migration specifically to find out why rather than clicking past it: the warning was about dropping `StokvelMembers.Id`, a synthetic surrogate key nobody read from anywhere in the application — a false alarm for this specific case, but only confirmed as one by actually reading the migration, not by assuming.
+- **Confirmed `ReferentialAction.Cascade` was applied to all five new/changed foreign keys** (EF's convention default). This is a real behavior change worth naming: deleting a `Stokvel` now cascades to delete its `StokvelMembers`, `Contributions`, and `Payouts`, where before they were simply left orphaned/unreachable. I kept the convention default rather than overriding it, since cascading deletes match the domain's actual meaning (a contribution can't outlive the stokvel it belongs to), but it's a decision, not an accident.
+- **Applying the migration genuinely failed once**, with a real `23503` foreign key violation on `FK_ContributionCycles_Stokvels_StokvelId` — three `ContributionCycles` rows referenced a `StokvelId` that no longer existed in `Stokvels`, orphaned from earlier manual testing before this FK existed to prevent it. This is exactly the kind of problem an `ALTER` can surface that a `CREATE` never would: the schema change itself was correct, but the data underneath it wasn't. I identified the three orphaned rows with a `LEFT JOIN ... WHERE ... IS NULL` query, deleted them (and checked for any `Contributions`/`Payouts` referencing them first — there were none), and reapplied the migration, which then completed successfully from where it had stopped.
+
+### The second relationship wired, and the alternative
+
+I wired `Stokvel` ↔ `ContributionCycle` as a real navigation on both sides (`Stokvel.ContributionCycles`, `ContributionCycle.Stokvel`), backed by a proper FK with cascade delete. I considered `ContributionCycle` ↔ `Contribution` instead, but `Contribution`'s configuration was already being touched by the composite-FK work for the `StokvelMember` relationship in the same pass — wiring a second relationship onto the same entity at the same time would have made that part of the migration harder to review cleanly. `ContributionCycle` ↔ `Contribution` remains a fair, equally real one-to-many left unwired today — an honest "not yet," not an oversight.
+
+### N+1: measured, not estimated
+
+Built `GET /api/stokvels/{stokvelId}/cycles/{cycleId}/contributions-naive` (a temporary measurement endpoint, since removed) that loaded contribution rows with no eager loading, then issued one hand-written per-row query for each contribution's member and user — "naive" meant hand-written, since lazy-loading proxies aren't permitted. Seeded a stokvel with 9 real members and 9 real contributions against one cycle, turned on `"Microsoft.EntityFrameworkCore.Database.Command": "Information"` logging, and counted actual `Executed DbCommand` lines in the console output.
+
+**Measured results, for 9 contributions in one cycle:**
+
+| Version | Queries | What it fetches |
+|---|---|---|
+| Naive (hand-written, 1 query per row) | **10** | 1 for contributions, then 9 separate `StokvelMembers` + `Users` joins, one per row |
+| Eager (`.Include().ThenInclude()`) | **2** | 1 for contributions, 1 for all matching `StokvelMembers` + `Users` in a single batch — but every column of all three entities |
+| Projection (`.Select()`, shipped) | **1** | 1 query, 3 columns total (`Id`, `Amount`, `MemberName`) — no entity graph materialized at all |
+
+**Shipped the projection.** The eager version still pulls every column of `Contribution`, `StokvelMember`, and `User` for every row returned, even though the endpoint only ever shows three fields. The gap between what's fetched and what's used only grows as a stokvel's member count grows — for a cycle with fifty members instead of nine, the eager version's per-row column cost scales with the full width of three tables, while the projection's cost stays fixed to exactly the three fields the response needs, regardless of how many members the stokvel has.
+
+### Loading-strategy decisions, named explicitly
+
+- **`GET .../contributions`** (the shipped endpoint): **explicit, targeted loading via projection** — deliberately not `.Include()`, for the column-cost reason above.
+- **`EfStokvelStore.GetStokvelByIdAsync` / `GetStokvelByIdReadOnlyAsync`** (via `HydrateMembersAsync`): **explicit loading via a separate, targeted query**, not `.Include()`, since membership is a collection only the stokvel-retrieval methods ever need — a dedicated query avoids pulling it anywhere else it isn't used.
+- **Lazy loading appears nowhere.** It would mean EF silently issuing a query the moment any navigation property is touched, anywhere in the codebase, with no visible trace at the call site — exactly the hidden cost this whole assignment exists to make visible instead of hiding further.
+
+### AsNoTracking(): where a read/write split was needed
+
+Audited every `GetById`-style method shared between a pure `GET` action and an `Update`/`Delete` action that loads, mutates (or removes), then saves. Found the problem on three entities: `GetStokvelByIdAsync`, `GetUserByIdAsync`, and `IContributionCycleStore.GetByIdAsync` were each called by both a `GET` action and an `Update` action — blindly adding `AsNoTracking()` to any of them would have silently broken every `PUT` on that entity, since EF can't persist changes through a detached instance.
+
+**Resolution: two separate methods per entity**, not a boolean flag, so the intent is visible at every call site rather than hidden in an argument:
+
+```csharp
+Task<Stokvel?> GetStokvelByIdAsync(Guid id);           // tracked — Update still uses this
+Task<Stokvel?> GetStokvelByIdReadOnlyAsync(Guid id);    // AsNoTracking — GetById uses this
+```
+
+Applied the same split to `GetUserByIdAsync`/`GetUserByIdReadOnlyAsync` and `GetByIdAsync`/`GetByIdReadOnlyAsync` on `IContributionCycleStore`. For `ContributionCycle`, `Delete` was a worthwhile edge case to think through separately from `Update`: it loads the cycle only to check it exists and belongs to the right stokvel, never calls a mutation method on it, and the actual removal happens through a separate `DeleteAsync` call with its own tracked lookup — so `Delete`'s initial existence check was safe to point at the read-only method too, even though it isn't a pure `GET` action.
+
+### Test suite: before/after, and what broke
+
+**Before today's changes:** 104 passed, 0 failed (Assignment 5.1's final state).
+
+**After, on the first full re-run:** 102 passed, 2 failed. Both failures were genuine and worth explaining, not estimating:
+
+1. **`Creating_a_cycle_returns_201_with_a_location_and_the_cycle_can_then_be_fetched`** — failed comparing `CreatedAt` exactly between a freshly-created object and the same row re-fetched from PostgreSQL (`...4864383Z` vs `...4864380Z`, a 3-tick difference). This was a pre-existing fragility in the test unrelated to today's relationship work — PostgreSQL's timestamp round-trip doesn't preserve .NET's full sub-microsecond precision. Fixed by comparing with a millisecond tolerance instead of exact equality, the same pattern used for the decimal-scale issue found in Assignment 5.1.
+2. **`Get_Stokvel_That_Does_Not_Exist_Returns_404_ProblemJson`** — failed with a `500` instead of `404`, and this one was a real regression caused directly by today's `AsNoTracking()` split: during the edit that introduced `GetStokvelByIdReadOnlyAsync`, the `if (stokvel is null) throw new NotFoundException(...)` check that must follow the lookup was lost, so a `null` result was passed straight into `StokvelMapper.ToResponse`, throwing a `NullReferenceException` that the global exception handler correctly reported as a `500`. This is exactly the kind of bug the read/write split is supposed to surface, not hide — found by re-running the suite immediately after the change rather than assuming it was safe. Fixed by restoring the null check.
+
+**After both fixes:** 104 passed, 0 failed — back to the full baseline, with the same count as before today, which makes sense: today added relationship and query-behavior correctness, not new endpoints or new tests of its own beyond what the N+1 work needed (and that lived in a temporary measurement endpoint since removed).
+
+I also specifically checked every existing test file for any direct reference to `StokvelMember.Id` — the thing that would have broken outright if the composite-key change had been incomplete. None exist: no test ever constructed a `StokvelMember` directly or asserted on its id; every test that touches membership does so through `Stokvel.MemberIds` (the domain-level view, unchanged) or through the HTTP API's `memberCount`/`201`/`409` responses, none of which reference the entity's internal key shape.
+
+### Definition of Done, extended again
+
+Two columns added: **Relationship modeled as navigation** and **N+1 measured and fixed**.
+
+| # | Endpoint | Documented | Validated | Unit-tested | Integration-tested | Status codes reviewed | Persisted via EF Core | Explicit transaction tested | Relationship modeled as navigation | N+1 measured and fixed |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | `GET /api/users` | yes | n/a | no | yes | yes | yes | N/A | N/A | N/A |
+| 2 | `GET /api/users/{id}` | yes | yes | no | yes | yes | yes | N/A | N/A | N/A |
+| 3 | `POST /api/users` | yes | yes | no | yes | yes | yes | N/A | N/A | N/A |
+| 4 | `PUT /api/users/{id}` | yes | yes | no | yes | yes | yes | N/A | N/A | N/A |
+| 5 | `DELETE /api/users/{id}` | yes | yes | no | yes | yes | yes | N/A | N/A | N/A |
+| 6 | `GET /api/stokvels` | yes | n/a | no | yes | yes | yes | N/A | N/A | N/A |
+| 7 | `GET /api/stokvels/{id}` | yes | yes | no | yes | yes | yes | N/A | N/A | N/A |
+| 8 | `POST /api/stokvels` | yes | yes | yes | yes | yes | yes | N/A | N/A | N/A |
+| 9 | `PUT /api/stokvels/{id}` | yes | yes | partly | yes | yes | yes | N/A | N/A | N/A |
+| 10 | `DELETE /api/stokvels/{id}` | yes | yes | no | yes | yes | yes | N/A | **yes** (cascades to StokvelMembers/Contributions/Payouts) | N/A |
+| 11 | `POST /api/stokvels/{id}/members` | yes | yes | yes | yes | yes | yes | N/A | **yes** (StokvelMember composite key + navigations) | N/A |
+| 12 | `POST /api/stokvels/{id}/contributions` | yes | yes | yes | yes | yes | **no** | N/A | **yes** (composite FK to StokvelMember) | N/A |
+| 13 | `GET /api/stokvels/{id}/cycles` | yes | yes | no | yes | yes | yes | N/A | **yes** (Stokvel↔ContributionCycle) | N/A |
+| 14 | `GET /api/stokvels/{id}/cycles/{cycleId}` | yes | yes | no | yes | yes | yes | N/A | yes | N/A |
+| 15 | `POST /api/stokvels/{id}/cycles` | yes | yes | partly | yes | yes | yes | N/A | yes | N/A |
+| 16 | `PUT /api/stokvels/{id}/cycles/{cycleId}` | yes | yes | no | yes | yes | yes | N/A | yes | N/A |
+| 17 | `DELETE /api/stokvels/{id}/cycles/{cycleId}` | yes | yes | no | yes | yes | yes | N/A | yes | N/A |
+| 18 | `POST /api/stokvels/{id}/cycles/{cycleId}/payout` | yes | n/a | no | yes | yes | yes | yes | **yes** (Payout composite FK to StokvelMember) | N/A |
+| 19 | `GET /api/stokvels/{id}/cycles/{cycleId}/contributions` | partly | n/a | no | no | yes | yes | N/A | yes | **yes — 10 → 2 → 1, projection shipped** |
+
+Row 19 has no dedicated integration test yet and no `EndpointSummary` block to the same depth as the others — a real gap, listed below rather than hidden.
+
+### Gaps surfaced and not closed
+
+- **`GET .../contributions` (the new endpoint) has no automated integration test.** It was verified manually against real seeded/measured data (the exact scenario used for the N+1 measurement), but no `ContributionsQueryApiTests.cs`-style test asserts on its `200`/empty-array/row-shape behavior the way every other endpoint's happy path is covered. A real gap, not an oversight I'm hiding — scoped out today to keep focus on the relationship and query-behavior work itself.
+- **Payout's "already paid out" / "everyone paid" conflicts still return `400`, not `409`** (carried over from Assignment 5.1, unchanged today).
+- **`PUT` on a cycle can still create a duplicate period** (carried over from Assignment 4.4, unchanged).
+- **The idempotency key is still compared against the request body only, not the stokvel id in the URL** (carried over from Assignment 4.4, unchanged).
+- **Contributions and idempotency keys are still in-memory** (carried over from Assignment 5.1, unchanged — `IContributionStore` and `IIdempotencyStore` were never swapped to EF Core).
+- **No optimistic concurrency control.** Named explicitly in Assignment 5.1's gaps and still true today; the course names this as a dedicated later topic (`xmin`-based concurrency), so it's deferred on purpose.

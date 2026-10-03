@@ -10,6 +10,7 @@ public class Contribution
     public Guid ContributionCycleId { get; }
     public DateTime CreatedAt { get; }
     private Contribution() { } // EF Core materializes instances via this, writing straight to the backing fields
+    public StokvelMember Member { get; private set; } = null!;
 
     public Contribution(Guid stokvelId, Guid userId, decimal amount, Guid contributionCycleId)
     {

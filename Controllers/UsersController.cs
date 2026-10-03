@@ -54,8 +54,7 @@ public class UsersController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<ActionResult<UserResponse>> GetById(Guid id)
     {
-        var user = await _store.GetUserByIdAsync(id);
-        if (user is null) throw new NotFoundException("User not found.");
+        var user = await _store.GetUserByIdReadOnlyAsync(id);        if (user is null) throw new NotFoundException("User not found.");
         return Ok(UserMapper.ToResponse(user));
     }
 

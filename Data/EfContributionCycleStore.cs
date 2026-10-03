@@ -33,4 +33,6 @@ public class EfContributionCycleStore : IContributionCycleStore
         await _db.SaveChangesAsync();
         return true;
     }
+        public async Task<ContributionCycle?> GetByIdReadOnlyAsync(Guid id) =>
+        await _db.ContributionCycles.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
 }

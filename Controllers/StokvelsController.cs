@@ -6,26 +6,30 @@ using RondiTrack.Models;
 using RondiTrack.Mapping;
 using RondiTrack.Services;
 using RondiTrack.Exceptions;
+using Microsoft.EntityFrameworkCore;
 
 [ApiController]
 [Route("api/stokvels")]
 public class StokvelsController : ControllerBase
 {
-        private readonly IStokvelStore _store;
+    private readonly IStokvelStore _store;
     private readonly StokvelMembershipService _membershipService;
     private readonly RecordContributionService _contributionService;
     private readonly PayoutService _payoutService;
+    private readonly RondiTrackDbContext _db;
 
     public StokvelsController(
         IStokvelStore store,
         StokvelMembershipService membershipService,
         RecordContributionService contributionService,
-        PayoutService payoutService)
+        PayoutService payoutService,
+        RondiTrackDbContext db)
     {
         _store = store;
         _membershipService = membershipService;
         _contributionService = contributionService;
         _payoutService = payoutService;
+        _db = db;
     }
 
     [HttpGet]
@@ -79,7 +83,7 @@ public class StokvelsController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<ActionResult<StokvelResponse>> GetById(Guid id)
     {
-        var stokvel = await _store.GetStokvelByIdAsync(id);
+        var stokvel = await _store.GetStokvelByIdReadOnlyAsync(id);
         if (stokvel is null) throw new NotFoundException("Stokvel not found.");
         return Ok(StokvelMapper.ToResponse(stokvel));
     }
@@ -293,7 +297,7 @@ public class StokvelsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id }, response);
     }
 
-        [HttpPost("{id}/cycles/{cycleId}/payout")]
+    [HttpPost("{id}/cycles/{cycleId}/payout")]
     [EndpointSummary("Process the next payout for a contribution cycle")]
     [EndpointDescription("""
         Determines the next eligible recipient — the member who joined this stokvel earliest
@@ -312,5 +316,24 @@ public class StokvelsController : ControllerBase
     {
         var payout = await _payoutService.ProcessAsync(id, cycleId);
         return CreatedAtAction(nameof(GetById), new { id }, RondiTrack.Mapping.PayoutMapper.ToResponse(payout));
+    }
+
+    [HttpGet("{id}/cycles/{cycleId}/contributions")]
+    [EndpointSummary("List contributions for a cycle")]
+    [EndpointDescription("""
+        Returns every contribution recorded for the given cycle, with each member's name resolved
+        via a single projected query — no full entity graph is materialized.
+        """)]
+    public async Task<IActionResult> GetContributions(Guid id, Guid cycleId)
+    {
+        var result = await (
+            from c in _db.Contributions
+            join m in _db.StokvelMembers on new { c.UserId, c.StokvelId } equals new { m.UserId, m.StokvelId }
+            join u in _db.Users on m.UserId equals u.Id
+            where c.StokvelId == id && c.ContributionCycleId == cycleId
+            select new { c.Id, c.Amount, MemberName = u.Name }
+        ).ToListAsync(); // 1 query, only 3 columns per row — no full entity graph
+
+        return Ok(result);
     }
 }

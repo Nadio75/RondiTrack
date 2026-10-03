@@ -87,8 +87,7 @@ public class ContributionCyclesController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<ActionResult<ContributionCycleResponse>> GetById(Guid stokvelId, Guid cycleId)
     {
-        var cycle = await _cycleStore.GetByIdAsync(cycleId);
-        // Also checking StokvelId stops someone fetching a real cycle id through the wrong stokvel's route.
+        var cycle = await _cycleStore.GetByIdReadOnlyAsync(cycleId);        // Also checking StokvelId stops someone fetching a real cycle id through the wrong stokvel's route.
         if (cycle is null || cycle.StokvelId != stokvelId)
             throw new NotFoundException("Contribution cycle not found.");
 
@@ -233,11 +232,11 @@ public class ContributionCyclesController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<IActionResult> Delete(Guid stokvelId, Guid cycleId)
     {
-        var cycle = await _cycleStore.GetByIdAsync(cycleId);
-        if (cycle is null || cycle.StokvelId != stokvelId)
+        var cycle = await _cycleStore.GetByIdReadOnlyAsync(cycleId);        if (cycle is null || cycle.StokvelId != stokvelId)
             throw new NotFoundException("Contribution cycle not found.");
 
         await _cycleStore.DeleteAsync(cycleId);
         return NoContent();
     }
+    
 }

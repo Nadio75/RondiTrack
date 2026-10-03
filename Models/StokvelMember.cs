@@ -1,23 +1,26 @@
 namespace RondiTrack.Models;
 
-// A relational record of one user's membership in one stokvel.
-// This exists so membership can be queried and constrained at the database
-// level (a UNIQUE index on StokvelId+UserId), separately from how the
-// Stokvel domain object exposes MemberIds to the rest of the app.
+// No surrogate Id: this entity's identity IS the pair (UserId, StokvelId).
+// Membership isn't a bare link — it carries data of its own (Role, when it
+// started), which is exactly why it has to be a real entity, not an
+// implicit many-to-many EF Core would build silently if asked to.
 public class StokvelMember
 {
-    public Guid Id { get; private set; }
-    public Guid StokvelId { get; private set; }
     public Guid UserId { get; private set; }
-    public DateTime JoinedAt { get; private set; }
+    public Guid StokvelId { get; private set; }
+    public string Role { get; private set; } = "Member";
+    public DateTime JoinedAtUtc { get; private set; }
 
-    private StokvelMember() { } // EF Core needs this
+    public User User { get; private set; } = null!;
+    public Stokvel Stokvel { get; private set; } = null!;
 
-    public StokvelMember(Guid stokvelId, Guid userId)
+    private StokvelMember() { } // EF Core materializes instances via this
+
+    public StokvelMember(Guid stokvelId, Guid userId, string role = "Member")
     {
-        Id = Guid.NewGuid();
         StokvelId = stokvelId;
         UserId = userId;
-        JoinedAt = DateTime.UtcNow;
+        Role = role;
+        JoinedAtUtc = DateTime.UtcNow;
     }
 }
