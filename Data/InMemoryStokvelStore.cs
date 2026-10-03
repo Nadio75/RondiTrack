@@ -96,5 +96,24 @@ public class InMemoryStokvelStore : IStokvelStore
         // No-op: the in-memory Stokvel object's MemberIds already IS the source
     // of truth here, updated by stokvel.AddMember() in the service. There's
     // no separate relational table to also write to.
-    public Task AddMembershipAsync(Guid stokvelId, Guid userId) => Task.CompletedTask;
-}
+    // No-op on the write: the in-memory Stokvel object's MemberIds already IS
+    // the source of truth here, updated by stokvel.AddMember() in the service.
+    // There's no separate relational table to also write to.
+    public Task AddMembershipAsync(Guid stokvelId, Guid userId, string role = "Member") =>
+        Task.CompletedTask;
+
+    // Synthesizes a StokvelMember on the fly from Stokvel.MemberIds, since this
+    // store never keeps real StokvelMember objects — only the EF-backed store
+    // does. Good enough for the unit tests that construct this store directly
+    // and only ever check whether a membership exists.
+    public Task<StokvelMember?> GetMembershipAsync(Guid stokvelId, Guid userId)
+    {
+        var stokvel = _stokvels.FirstOrDefault(s => s.Id == stokvelId);
+        if (stokvel is null || !stokvel.MemberIds.Contains(userId))
+            return Task.FromResult<StokvelMember?>(null);
+
+        return Task.FromResult<StokvelMember?>(new StokvelMember(stokvelId, userId));
+    }
+        public Task<User?> GetUserByIdReadOnlyAsync(Guid id) => GetUserByIdAsync(id);
+    public Task<Stokvel?> GetStokvelByIdReadOnlyAsync(Guid id) => GetStokvelByIdAsync(id);
+    }

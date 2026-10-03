@@ -38,7 +38,7 @@ public class PayoutService
 
             var nextRecipientId = await _db.StokvelMembers
                 .Where(m => m.StokvelId == stokvelId && !alreadyPaidUserIds.Contains(m.UserId))
-                .OrderBy(m => m.JoinedAt)
+                .OrderBy(m => m.JoinedAtUtc)
                 .Select(m => m.UserId)
                 .FirstOrDefaultAsync();
 
