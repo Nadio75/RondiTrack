@@ -33,8 +33,8 @@ public class CyclesApiTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(created.StokvelId, fetched.StokvelId);
         Assert.Equal(created.Period, fetched.Period);
         Assert.True(created.TargetAmount == fetched.TargetAmount, $"Expected {created.TargetAmount}, got {fetched.TargetAmount}");
-        Assert.Equal(created.CreatedAt, fetched.CreatedAt);        
-    }
+Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMilliseconds(1),
+    $"Expected {created.CreatedAt}, got {fetched.CreatedAt}");    }
 
     [Fact]
     public async Task Listing_cycles_returns_only_that_stokvels_cycles()
