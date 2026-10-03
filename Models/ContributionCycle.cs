@@ -10,6 +10,7 @@ public class ContributionCycle
     public decimal TargetAmount { get; private set; }
     public DateTime CreatedAt { get; }
     public string Status { get; private set; } = "Open";
+        public Stokvel Stokvel { get; private set; } = null!;
 
 
     public ContributionCycle(Guid stokvelId, string period, decimal targetAmount)

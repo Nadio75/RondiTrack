@@ -15,6 +15,7 @@ public class User
     public string Name { get; private set; }
 
     public string ContactNumber { get; private set; }
+        public ICollection<StokvelMember> Memberships { get; private set; } = new List<StokvelMember>();
 
     private User() { } // EF Core materializes instances via this, writing straight to the backing fields
 
