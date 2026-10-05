@@ -3,6 +3,8 @@ namespace RondiTrack.Exceptions;
 
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 // Implements ASP.NET Core's built-in IExceptionHandler interface — this is the ONE place
 // in the whole app that decides what an exception becomes on the wire. Nothing else should
@@ -19,12 +21,21 @@ public class RondiTrackExceptionHandler : IExceptionHandler
     public async ValueTask<bool> TryHandleAsync(
     HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
 {
-    // ASP.NET Core already generates a unique id per request — reusing it as our
-    // correlation id means we don't need a separate middleware just to invent one.
     var correlationId = httpContext.TraceIdentifier;
 
-    // One switch expression maps every exception type to its status code and title —
-    // this is the single source of truth the whole app relies on now.
+    // --- Map unique constraint violations (Postgres 23505) to 409 ---
+    if (exception is DbUpdateException dbEx)
+    {
+        var postgresEx = dbEx.InnerException as PostgresException
+                      ?? dbEx.InnerException?.InnerException as PostgresException;
+
+        if (postgresEx?.SqlState == PostgresErrorCodes.UniqueViolation) // "23505"
+        {
+            exception = new ConflictException(
+                "A resource with the same unique key already exists.");
+        }
+    }
+
     var (statusCode, title) = exception switch
     {
         NotFoundException => (StatusCodes.Status404NotFound, "Not Found"),
@@ -34,9 +45,6 @@ public class RondiTrackExceptionHandler : IExceptionHandler
         _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.")
     };
 
-    // Known domain failures are expected traffic, not bugs — log them as warnings with
-    // just the message. Anything NOT in our hierarchy is genuinely unexpected, so it's
-    // logged as an error with the full exception (stack trace included).
     if (exception is RondiTrackException)
     {
         _logger.LogWarning(
@@ -51,8 +59,6 @@ public class RondiTrackExceptionHandler : IExceptionHandler
             correlationId);
     }
 
-    // Never leak an unexpected exception's raw message to a caller — only our own
-    // known exception types get their message surfaced. Anything else gets a generic detail.
     var detail = exception is RondiTrackException
         ? exception.Message
         : "An unexpected error occurred. Please try again.";
@@ -68,12 +74,9 @@ public class RondiTrackExceptionHandler : IExceptionHandler
     httpContext.Response.StatusCode = statusCode;
     httpContext.Response.ContentType = "application/problem+json";
 
-    // WriteAsJsonAsync's simple overload always forces the content-type back to
-    // "application/json" itself, ignoring whatever was set above — serializing and
-    // writing manually is what actually keeps "application/problem+json" on the response.
     var json = System.Text.Json.JsonSerializer.Serialize(problemDetails);
     await httpContext.Response.WriteAsync(json, cancellationToken);
 
-    return true; // tells ASP.NET Core: "handled, don't do anything further with this exception"
+    return true;
 }
 }

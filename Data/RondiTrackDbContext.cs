@@ -48,6 +48,8 @@ public class RondiTrackDbContext : DbContext
             b.Property(s => s.Id);
             b.Property(s => s.Name).IsRequired().HasMaxLength(100);
             b.Property(s => s.ContributionAmount).HasPrecision(18, 2);
+            b.Property(p => p.xmin)
+    .IsRowVersion();
         });
 
         modelBuilder.Entity<User>(b =>
@@ -67,6 +69,10 @@ public class RondiTrackDbContext : DbContext
             b.Property(c => c.Amount).HasPrecision(18, 2);
             b.Property(c => c.ContributionCycleId);
             b.Property(c => c.CreatedAt);
+            b.HasIndex(c => new { c.StokvelId, c.ContributionCycleId, c.CreatedAt, c.Id });
+            // One contribution per member per cycle (already enforced in C# service layer)
+            b.HasIndex(c => new { c.UserId, c.StokvelId, c.ContributionCycleId })
+                .IsUnique();
             b.HasOne(c => c.Member)
                 .WithMany()
                 .HasForeignKey(c => new { c.UserId, c.StokvelId })
@@ -88,6 +94,8 @@ public class RondiTrackDbContext : DbContext
             b.Property(c => c.TargetAmount).HasPrecision(18, 2);
             b.Property(c => c.CreatedAt);
             b.Property(c => c.Status).IsRequired();
+           b.Property(p => p.xmin)
+    .IsRowVersion();
             b.HasIndex(c => new { c.StokvelId, c.Period }).IsUnique();
             b.HasOne(c => c.Stokvel)
                 .WithMany(s => s.ContributionCycles)
@@ -103,11 +111,19 @@ public class RondiTrackDbContext : DbContext
             b.Property(p => p.RecipientUserId);
             b.Property(p => p.Amount).HasPrecision(18, 2);
             b.Property(p => p.ProcessedAt);
+            b.Property(p => p.xmin)
+    .IsRowVersion();
+
+            // One payout per cycle (matches the business rule that a cycle is paid out once)
+            b.HasIndex(p => p.ContributionCycleId)
+             .IsUnique();
 
             b.HasOne<StokvelMember>()
                 .WithMany()
                 .HasForeignKey(p => new { p.RecipientUserId, p.StokvelId })
                 .HasPrincipalKey(m => new { m.UserId, m.StokvelId });
+                
         });
+        
     }
 }

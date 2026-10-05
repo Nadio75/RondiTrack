@@ -57,6 +57,8 @@ builder.Services.AddControllers(options =>
 //builder.Services.AddProblemDetails();
 
 var app = builder.Build();
+// Temporary manual volume-seeding command.
+// Run with: dotnet run -- --seed-volume
 
 // --- Middleware pipeline (after Build(), before Run()) ---
 
@@ -76,6 +78,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseAuthorization();
+
 
 // Wires up all your [ApiController] classes (UsersController, StokvelsController)
 // to their routes.

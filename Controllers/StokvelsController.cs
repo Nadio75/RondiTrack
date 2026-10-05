@@ -409,6 +409,54 @@ public async Task<IActionResult> GetMembers(
         var response = await _contributionService.ExecuteAsync(id, idempotencyKey, request);
         return CreatedAtAction(nameof(GetById), new { id }, response);
     }
+    [HttpGet("{id}/cycles/{cycleId}/payout")]
+[EndpointSummary("Get the payout for a contribution cycle")]
+[EndpointDescription("""
+    Returns the payout recorded for the given contribution cycle, including the
+    PostgreSQL xmin concurrency token as `version`.
+
+    The returned `version` must be supplied when updating the payout.
+    """)]
+[ProducesResponseType<PayoutResponse>(StatusCodes.Status200OK)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+public async Task<IActionResult> GetPayout(Guid id, Guid cycleId)
+{
+    var payout = await _db.Payouts
+        .AsNoTracking()
+        .FirstOrDefaultAsync(p =>
+            p.StokvelId == id &&
+            p.ContributionCycleId == cycleId);
+
+    if (payout is null)
+        throw new NotFoundException("Payout not found.");
+
+    return Ok(PayoutMapper.ToResponse(payout));
+}
+[HttpPut("{id}/cycles/{cycleId}/payout")]
+[EndpointSummary("Update a payout amount using optimistic concurrency")]
+[EndpointDescription("""
+    Updates the payout amount.
+
+    The `version` returned by GET must be supplied with the request.
+    If another request has already changed the payout, the stale version
+    is rejected with 409 Conflict.
+    """)]
+[ProducesResponseType<PayoutResponse>(StatusCodes.Status200OK)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+public async Task<IActionResult> UpdatePayout(
+    Guid id,
+    Guid cycleId,
+    UpdatePayoutRequest request)
+{
+    var payout = await _payoutService.UpdateAmountAsync(
+        id,
+        cycleId,
+        request.Amount,
+        request.Version);
+
+    return Ok(PayoutMapper.ToResponse(payout));
+}
 
     [HttpPost("{id}/cycles/{cycleId}/payout")]
     [EndpointSummary("Process the next payout for a contribution cycle")]
