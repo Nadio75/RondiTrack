@@ -9,6 +9,7 @@ using RondiTrack.Exceptions;
 using RondiTrack.Models.Dtos;
 using RondiTrack.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 
 public class PayoutApiTests : IClassFixture<WebApplicationFactory<Program>>
 {
@@ -84,4 +85,48 @@ public class PayoutApiTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Empty(payoutsForSecondCycle);
         Assert.Equal("Open", reloadedSecondCycle!.Status);
     }
+
+    [Fact]
+public async Task Updating_payout_with_stale_version_returns_409()
+{
+    var s = await _client.ArrangeMemberWithCycleAsync();
+
+    // Create the payout.
+    var createResponse = await _client.PostAsync(
+        $"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout",
+        null);
+
+    Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+
+    // HTTP GET obtains the original xmin/version token.
+    var getResponse = await _client.GetAsync(
+        $"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout");
+
+    Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+
+    var original = await getResponse.Content
+        .ReadFromJsonAsync<PayoutResponse>();
+
+    Assert.NotNull(original);
+    Assert.True(original!.Version > 0);
+
+    // First update uses the token we just obtained.
+    var firstUpdate = await _client.PutAsJsonAsync(
+        $"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout",
+        new UpdatePayoutRequest(750m, original.Version));
+
+    Assert.Equal(HttpStatusCode.OK, firstUpdate.StatusCode);
+
+    // Second update deliberately reuses the OLD token.
+    var staleUpdate = await _client.PutAsJsonAsync(
+        $"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout",
+        new UpdatePayoutRequest(900m, original.Version));
+
+    Assert.Equal(HttpStatusCode.Conflict, staleUpdate.StatusCode);
+
+    var problem = await staleUpdate.Content
+        .ReadFromJsonAsync<ProblemDetails>();
+
+    Assert.Equal(409, problem!.Status);
+}
 }

@@ -55,4 +55,41 @@ public class PayoutService
             return payout;
         });
     }
+    public async Task<Payout> UpdateAmountAsync(
+    Guid stokvelId,
+    Guid contributionCycleId,
+    decimal amount,
+    uint version)
+{
+    if (amount <= 0)
+        throw new BusinessRuleViolationException(
+            "Payout amount must be greater than zero.");
+
+    var payout = await _db.Payouts
+        .FirstOrDefaultAsync(p =>
+            p.StokvelId == stokvelId &&
+            p.ContributionCycleId == contributionCycleId);
+
+    if (payout is null)
+        throw new NotFoundException("Payout not found.");
+
+    // Tell EF which xmin value the client originally read.
+    _db.Entry(payout)
+        .Property(p => p.xmin)
+        .OriginalValue = version;
+
+    payout.UpdateAmount(amount);
+
+    try
+    {
+        await _db.SaveChangesAsync();
+    }
+    catch (DbUpdateConcurrencyException)
+    {
+        throw new ConflictException(
+            "The payout was modified by another request. Refresh it and retry.");
+    }
+
+    return payout;
+}
 }

@@ -8,6 +8,8 @@ public class Payout
     public Guid RecipientUserId { get; private set; }
     public decimal Amount { get; private set; }
     public DateTime ProcessedAt { get; private set; }
+    // Optimistic concurrency token – maps to PostgreSQL xmin (no real column)
+    public uint xmin { get; set; }
 
     private Payout() { }
 
@@ -23,4 +25,13 @@ public class Payout
         Amount = amount;
         ProcessedAt = DateTime.UtcNow;
     }
+    public void UpdateAmount(decimal amount)
+{
+    if (amount <= 0)
+        throw new ArgumentException(
+            "Payout amount must be greater than zero.",
+            nameof(amount));
+
+    Amount = amount;
+}
 }

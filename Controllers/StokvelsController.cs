@@ -7,6 +7,8 @@ using RondiTrack.Mapping;
 using RondiTrack.Services;
 using RondiTrack.Exceptions;
 using Microsoft.EntityFrameworkCore;
+using RondiTrack.Models.Dtos;
+using RondiTrack.Helpers;
 
 [ApiController]
 [Route("api/stokvels")]
@@ -87,6 +89,117 @@ public class StokvelsController : ControllerBase
         if (stokvel is null) throw new NotFoundException("Stokvel not found.");
         return Ok(StokvelMapper.ToResponse(stokvel));
     }
+
+    [HttpGet("{id}/members")]
+[EndpointSummary("List members of a stokvel (paged)")]
+[EndpointDescription("""
+    Returns the members of the given stokvel, paged and sorted in the database.
+    Default page size is 20, maximum is 100. Negative page_size returns 400.
+    The page_token is opaque. An empty nextPageToken means there are no more results.
+    """)]
+[ProducesResponseType<PagedResponse<MemberListItem>>(StatusCodes.Status200OK)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+public async Task<IActionResult> GetMembers(
+    Guid id,
+    [FromQuery] int? page_size = null,
+    [FromQuery] string? page_token = null,
+    [FromQuery] string? sort = null)
+{
+    // Confirm the stokvel exists
+    var stokvelExists = await _db.Stokvels.AsNoTracking().AnyAsync(s => s.Id == id);
+    if (!stokvelExists)
+        throw new NotFoundException("Stokvel not found.");
+
+    // --- page size rules (same contract as contributions) ---
+    const int DefaultPageSize = 20;
+    const int MaxPageSize = 100;
+
+    if (page_size is < 0)
+        return BadRequest(new ProblemDetails
+        {
+            Title = "Invalid page_size",
+            Detail = "page_size must be zero or positive.",
+            Status = StatusCodes.Status400BadRequest
+        });
+
+    var size = page_size ?? DefaultPageSize;
+    if (size > MaxPageSize)
+        size = MaxPageSize;
+
+    // --- sort allow-list ---
+    // Supported: joinedAt (default). Anything else → 400.
+    var sortField = (sort ?? "joinedAt").ToLowerInvariant();
+    if (sortField is not "joinedat")
+        return BadRequest(new ProblemDetails
+        {
+            Title = "Invalid sort field",
+            Detail = "Supported sort fields: joinedAt",
+            Status = StatusCodes.Status400BadRequest
+        });
+
+    // --- decode keyset token ---
+    DateTime? afterJoinedAt = null;
+    Guid? afterUserId = null;
+
+    if (!string.IsNullOrWhiteSpace(page_token))
+    {
+        var decoded = PageToken.Decode(page_token);
+        if (decoded is null)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid page_token",
+                Detail = "The supplied page_token is malformed.",
+                Status = StatusCodes.Status400BadRequest
+            });
+
+        afterJoinedAt = decoded.Value.CreatedAt;   // we reuse the same token shape
+        afterUserId = decoded.Value.Id;
+    }
+
+    // --- query fully in the database ---
+    var query =
+        from m in _db.StokvelMembers.AsNoTracking()
+        join u in _db.Users on m.UserId equals u.Id
+        where m.StokvelId == id
+        select new { m.UserId, u.Name, m.Role, m.JoinedAtUtc };
+
+    // keyset filter
+    if (afterJoinedAt.HasValue && afterUserId.HasValue)
+    {
+        query = query.Where(x =>
+            x.JoinedAtUtc > afterJoinedAt.Value ||
+            (x.JoinedAtUtc == afterJoinedAt.Value && x.UserId > afterUserId.Value));
+    }
+
+    // deterministic order + unique tie-breaker
+    query = query
+        .OrderBy(x => x.JoinedAtUtc)
+        .ThenBy(x => x.UserId);
+
+    var rows = await query
+        .Take(size + 1)
+        .ToListAsync();
+
+    string? nextToken = null;
+    var items = rows;
+
+    if (rows.Count > size)
+    {
+        var last = rows[size - 1];
+        nextToken = PageToken.Encode(last.JoinedAtUtc, last.UserId);
+        items = rows.Take(size).ToList();
+    }
+
+    var response = new PagedResponse<MemberListItem>(
+        items.Select(x => new MemberListItem(x.UserId, x.Name, x.Role, x.JoinedAtUtc)).ToList(),
+        nextToken
+    );
+
+    return Ok(response);
+}
+
+
 
     [HttpPost]
     [EndpointSummary("Create a stokvel")]
@@ -296,6 +409,54 @@ public class StokvelsController : ControllerBase
         var response = await _contributionService.ExecuteAsync(id, idempotencyKey, request);
         return CreatedAtAction(nameof(GetById), new { id }, response);
     }
+    [HttpGet("{id}/cycles/{cycleId}/payout")]
+[EndpointSummary("Get the payout for a contribution cycle")]
+[EndpointDescription("""
+    Returns the payout recorded for the given contribution cycle, including the
+    PostgreSQL xmin concurrency token as `version`.
+
+    The returned `version` must be supplied when updating the payout.
+    """)]
+[ProducesResponseType<PayoutResponse>(StatusCodes.Status200OK)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+public async Task<IActionResult> GetPayout(Guid id, Guid cycleId)
+{
+    var payout = await _db.Payouts
+        .AsNoTracking()
+        .FirstOrDefaultAsync(p =>
+            p.StokvelId == id &&
+            p.ContributionCycleId == cycleId);
+
+    if (payout is null)
+        throw new NotFoundException("Payout not found.");
+
+    return Ok(PayoutMapper.ToResponse(payout));
+}
+[HttpPut("{id}/cycles/{cycleId}/payout")]
+[EndpointSummary("Update a payout amount using optimistic concurrency")]
+[EndpointDescription("""
+    Updates the payout amount.
+
+    The `version` returned by GET must be supplied with the request.
+    If another request has already changed the payout, the stale version
+    is rejected with 409 Conflict.
+    """)]
+[ProducesResponseType<PayoutResponse>(StatusCodes.Status200OK)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+public async Task<IActionResult> UpdatePayout(
+    Guid id,
+    Guid cycleId,
+    UpdatePayoutRequest request)
+{
+    var payout = await _payoutService.UpdateAmountAsync(
+        id,
+        cycleId,
+        request.Amount,
+        request.Version);
+
+    return Ok(PayoutMapper.ToResponse(payout));
+}
 
     [HttpPost("{id}/cycles/{cycleId}/payout")]
     [EndpointSummary("Process the next payout for a contribution cycle")]
@@ -318,22 +479,112 @@ public class StokvelsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id }, RondiTrack.Mapping.PayoutMapper.ToResponse(payout));
     }
 
-    [HttpGet("{id}/cycles/{cycleId}/contributions")]
-    [EndpointSummary("List contributions for a cycle")]
-    [EndpointDescription("""
-        Returns every contribution recorded for the given cycle, with each member's name resolved
-        via a single projected query — no full entity graph is materialized.
-        """)]
-    public async Task<IActionResult> GetContributions(Guid id, Guid cycleId)
-    {
-        var result = await (
-            from c in _db.Contributions
-            join m in _db.StokvelMembers on new { c.UserId, c.StokvelId } equals new { m.UserId, m.StokvelId }
-            join u in _db.Users on m.UserId equals u.Id
-            where c.StokvelId == id && c.ContributionCycleId == cycleId
-            select new { c.Id, c.Amount, MemberName = u.Name }
-        ).ToListAsync(); // 1 query, only 3 columns per row — no full entity graph
+    
+   [HttpGet("{id}/cycles/{cycleId}/contributions")]
+[EndpointSummary("List contributions for a cycle (paged)")]
+[EndpointDescription("""
+    Returns contributions recorded for the given cycle, paged and sorted in the database.
+    Default page size is 20, maximum is 100. Negative page_size returns 400.
+    The page_token is opaque. An empty nextPageToken means there are no more results.
+    """)]
+[ProducesResponseType<PagedResponse<ContributionListItem>>(StatusCodes.Status200OK)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+public async Task<IActionResult> GetContributions(
+    Guid id,
+    Guid cycleId,
+    [FromQuery] int? page_size = null,
+    [FromQuery] string? page_token = null,
+    [FromQuery] string? sort = null)
+{
+    // --- page size rules ---
+    const int DefaultPageSize = 20;
+    const int MaxPageSize = 100;
 
-        return Ok(result);
+    if (page_size is < 0)
+        return BadRequest(new ProblemDetails
+        {
+            Title = "Invalid page_size",
+            Detail = "page_size must be zero or positive.",
+            Status = StatusCodes.Status400BadRequest
+        });
+
+    var size = page_size ?? DefaultPageSize;
+    if (size > MaxPageSize)
+        size = MaxPageSize;
+
+    // --- sort allow-list (deterministic + unique tie-breaker) ---
+    // Only "createdAt" is supported for now. Anything else → 400.
+    // We always append Id as tie-breaker so two rows with the same CreatedAt
+    // can never flip sides of a page boundary.
+    var sortField = (sort ?? "createdAt").ToLowerInvariant();
+    if (sortField is not "createdat")
+        return BadRequest(new ProblemDetails
+        {
+            Title = "Invalid sort field",
+            Detail = "Supported sort fields: createdAt",
+            Status = StatusCodes.Status400BadRequest
+        });
+
+    // --- decode token (keyset) ---
+    DateTime? afterCreatedAt = null;
+    Guid? afterId = null;
+
+    if (!string.IsNullOrWhiteSpace(page_token))
+    {
+        var decoded = Helpers.PageToken.Decode(page_token);
+        if (decoded is null)
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid page_token",
+                Detail = "The supplied page_token is malformed.",
+                Status = StatusCodes.Status400BadRequest
+            });
+
+        afterCreatedAt = decoded.Value.CreatedAt;
+        afterId = decoded.Value.Id;
     }
+
+    // --- query stays fully IQueryable until the final ToListAsync ---
+    var query =
+        from c in _db.Contributions.AsNoTracking()
+        join m in _db.StokvelMembers on new { c.UserId, c.StokvelId } equals new { m.UserId, m.StokvelId }
+        join u in _db.Users on m.UserId equals u.Id
+        where c.StokvelId == id && c.ContributionCycleId == cycleId
+        select new { c.Id, c.Amount, MemberName = u.Name, c.CreatedAt };
+
+    // keyset filter (CreatedAt, Id)
+    if (afterCreatedAt.HasValue && afterId.HasValue)
+    {
+        query = query.Where(x =>
+            x.CreatedAt > afterCreatedAt.Value ||
+            (x.CreatedAt == afterCreatedAt.Value && x.Id.CompareTo(afterId.Value) > 0));
+    }
+
+    // deterministic order + unique tie-breaker
+    query = query
+        .OrderBy(x => x.CreatedAt)
+        .ThenBy(x => x.Id);
+
+    // fetch one extra row to know whether a next page exists
+    var rows = await query
+        .Take(size + 1)
+        .ToListAsync();
+
+    string? nextToken = null;
+    var items = rows;
+
+    if (rows.Count > size)
+    {
+        var last = rows[size - 1];
+        nextToken = Helpers.PageToken.Encode(last.CreatedAt, last.Id);
+        items = rows.Take(size).ToList();
+    }
+
+    var response = new Models.Dtos.PagedResponse<Models.Dtos.ContributionListItem>(
+        items.Select(x => new Models.Dtos.ContributionListItem(x.Id, x.Amount, x.MemberName, x.CreatedAt)).ToList(),
+        nextToken
+    );
+
+    return Ok(response);
+}
 }
