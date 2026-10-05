@@ -823,3 +823,93 @@ Row 19 has no dedicated integration test yet and no `EndpointSummary` block to t
 - **The idempotency key is still compared against the request body only, not the stokvel id in the URL** (carried over from Assignment 4.4, unchanged).
 - **Contributions and idempotency keys are still in-memory** (carried over from Assignment 5.1, unchanged — `IContributionStore` and `IIdempotencyStore` were never swapped to EF Core).
 - **No optimistic concurrency control.** Named explicitly in Assignment 5.1's gaps and still true today; the course names this as a dedicated later topic (`xmin`-based concurrency), so it's deferred on purpose.
+
+# RondiTrack — Stokvel Tracker
+
+RondiTrack is an ASP.NET Core Web API for managing stokvels, members, contribution cycles, contributions, and payouts.
+
+The project uses:
+
+- ASP.NET Core
+- Entity Framework Core
+- PostgreSQL
+- Npgsql
+- xUnit integration tests
+- Scalar for API testing
+
+---
+
+# Assignment 5.3 — Optimizations, Concurrency & Database Defense
+
+## 1. Assignment Overview
+
+Assignment 5.3 focused on making RondiTrack safer and more efficient when the application contains a large amount of data and when multiple users attempt to modify data at the same time.
+
+The assignment required improvements in three main areas:
+
+1. **Database performance**
+2. **Database integrity**
+3. **Optimistic concurrency**
+
+The main goal was to ensure that important work happens in PostgreSQL rather than unnecessarily inside the C# application, while also making PostgreSQL the final authority for rules that must always remain true.
+
+---
+
+# 2. What Was Required
+
+The assignment required the following:
+
+- Audit list endpoints and repositories for filtering, sorting, or paging happening after data had already been loaded into memory.
+- Move filtering, sorting, and paging into the database.
+- Introduce a pagination contract.
+- Paginate the contributions endpoint.
+- Paginate at least one additional list endpoint.
+- Support a sensible default page size.
+- Apply a server-side maximum page size.
+- Reject negative page sizes with HTTP 400.
+- Use an opaque page token.
+- Use deterministic ordering with a unique tie-breaker.
+- Explicitly allow only supported sorting/filtering fields.
+- Return `ProblemDetails` for malformed or unknown sorting/filtering requests.
+- Define behaviour for page-token reuse with different filter/sort settings.
+- Decide whether total counts are returned.
+- Choose and justify offset or keyset pagination.
+- Capture the generated SQL.
+- Seed at least 10,000 contributions.
+- Run `EXPLAIN ANALYZE` before and after adding a composite index.
+- Explain the query plan and performance difference.
+- Enforce at least two existing multi-column uniqueness rules in PostgreSQL.
+- Check for existing duplicate data before adding uniqueness constraints.
+- Inspect migrations for potential locking/cost problems.
+- Centrally translate PostgreSQL SQLSTATE `23505` into HTTP 409 Conflict.
+- Use PostgreSQL `xmin` for optimistic concurrency.
+- Protect entities that can be edited after creation.
+- Round-trip the concurrency token through HTTP.
+- Reject stale updates with HTTP 409 or 412.
+- Create deterministic concurrency tests using two independent `DbContext` instances.
+- Create an HTTP-level stale-token concurrency test.
+- Rerun the complete test suite.
+- Document the work and decisions.
+
+---
+
+# 3. Database-Side Filtering, Sorting and Paging
+
+## Why this was necessary
+
+A list endpoint can become inefficient if the application loads a large number of records into C# and only then filters, sorts, or pages them.
+
+For example, an inefficient approach would effectively do this:
+
+```text
+PostgreSQL
+    ↓
+Return thousands of rows
+    ↓
+C# loads all rows into memory
+    ↓
+C# filters them
+    ↓
+C# sorts them
+    ↓
+C# takes the first 20
