@@ -1,3 +1,7 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Infrastructure;
+using RondiTrack.Domain;
+using RondiTrack.Tests.TestSupport;
 namespace RondiTrack.Tests;
 
 using System.Net;
@@ -7,11 +11,12 @@ using RondiTrack.Models;
 
 // Edge cases the happy-path tests do not reach: an empty collection, values right at a
 // validator's limit, and a valid request that depends on another resource still existing.
-public class EdgeCaseTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection("Postgres collection")]
+public class EdgeCaseTests
 {
     private readonly HttpClient _client;
 
-    public EdgeCaseTests(WebApplicationFactory<Program> factory) => _client = factory.CreateClient();
+    public EdgeCaseTests(PostgresApiFactory factory) => _client = factory.CreateClient();
 
     // ---------- Edge case 1: an empty collection ----------
 
@@ -116,3 +121,6 @@ public class EdgeCaseTests : IClassFixture<WebApplicationFactory<Program>>
         response.AssertProblem(HttpStatusCode.NotFound);
     }
 }
+
+
+

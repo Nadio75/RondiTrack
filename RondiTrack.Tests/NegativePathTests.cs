@@ -1,3 +1,4 @@
+using RondiTrack.Tests.TestSupport;
 namespace RondiTrack.Tests;
 
 using System.Net;
@@ -7,11 +8,12 @@ using Xunit;
 
 // WebApplicationFactory<Program> boots the real app in-memory, using the real in-memory
 // stores — no database, no mocking, just the actual RondiTrack pipeline end to end.
-public class NegativePathTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection("Postgres collection")]
+public class NegativePathTests
 {
     private readonly HttpClient _client;
 
-    public NegativePathTests(WebApplicationFactory<Program> factory)
+    public NegativePathTests(PostgresApiFactory factory)
     {
         _client = factory.CreateClient();
     }
@@ -79,3 +81,5 @@ public class NegativePathTests : IClassFixture<WebApplicationFactory<Program>>
     // doesn't need to match your real StokvelResponse exactly, only the fields used here.
     private record StokvelResponseDto(Guid Id, string Name, decimal ContributionAmount, int MemberCount);
 }
+
+

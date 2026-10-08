@@ -1,13 +1,13 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Models;
 // Services/RecordContributionService.cs
 namespace RondiTrack.Services;
 
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using RondiTrack.Data;
-using RondiTrack.Models;
+using RondiTrack.Domain;
 using RondiTrack.Mapping;
-using RondiTrack.Exceptions;
 
 public class RecordContributionService
 {
@@ -92,3 +92,4 @@ public class RecordContributionService
         return Convert.ToHexString(bytes);
     }
 }
+

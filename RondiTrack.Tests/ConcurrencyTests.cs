@@ -1,3 +1,4 @@
+using RondiTrack.Infrastructure;
 namespace RondiTrack.Tests;
 
 using Microsoft.EntityFrameworkCore;

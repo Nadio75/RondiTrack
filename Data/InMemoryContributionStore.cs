@@ -1,6 +1,8 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Models;
 namespace RondiTrack.Data;
 
-using RondiTrack.Models;
+using RondiTrack.Domain;
 
 public class InMemoryContributionStore : IContributionStore
 {
@@ -22,3 +24,4 @@ public class InMemoryContributionStore : IContributionStore
         return Task.CompletedTask;
     }
 }
+

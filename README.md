@@ -913,3 +913,75 @@ C# filters them
 C# sorts them
     ↓
 C# takes the first 20
+
+---
+
+# Assignment 5.4 — Clean Architecture & Self-Contained Tests
+
+## 1. Assignment Overview
+
+Assignment 5.4 focused on restructuring RondiTrack into a cleaner architecture and making the integration test suite independent of the developer's local PostgreSQL database.
+
+The assignment had three main goals:
+
+1. Split the application into Domain, Infrastructure, and API projects with a clear dependency direction.
+2. Audit dependency-injection lifetimes so that services using Entity Framework Core follow the correct `DbContext` lifetime.
+3. Move integration tests to an isolated PostgreSQL database using Testcontainers so the complete test suite can run without the development database.
+
+No new API features or endpoints were added as part of this refactor. Existing behaviour and test assertions were preserved.
+
+---
+
+## 2. Final Project Structure
+
+The solution is now split into four projects:
+
+```text
+RondiTrack.slnx
+│
+├── RondiTrack.Domain
+│   ├── Models
+│   │   ├── Contribution.cs
+│   │   ├── ContributionCycle.cs
+│   │   ├── Payout.cs
+│   │   ├── StokvelMember.cs
+│   │   ├── Stokvels.cs
+│   │   └── Users.cs
+│   │
+│   ├── Exceptions
+│   │   ├── BusinessRuleViolationException.cs
+│   │   ├── ConflictException.cs
+│   │   ├── IdempotencyConflictException.cs
+│   │   ├── NotFoundException.cs
+│   │   └── RondiTrackException.cs
+│   │
+│   └── Data
+│       ├── IContributionCycleStore.cs
+│       ├── IContributionStore.cs
+│       ├── IIdempotencyStore.cs
+│       ├── IStokvelStore.cs
+│       └── IdempotencyRecord.cs
+│
+├── RondiTrack.Infrastructure
+│   ├── Data
+│   │   ├── RondiTrackDbContext.cs
+│   │   ├── EfContributionCycleStore.cs
+│   │   ├── EfStokvelStore.cs
+│   │   └── VolumeSeeder.cs
+│   │
+│   └── Migrations
+│       └── EF Core migrations
+│
+├── RondiTrack
+│   ├── Controllers
+│   ├── Models
+│   ├── Services
+│   ├── Mapping
+│   ├── Validation
+│   ├── Helpers
+│   └── Program.cs
+│
+└── RondiTrack.Tests
+    ├── API/integration tests
+    └── TestSupport
+        └── PostgresApiFactory.cs

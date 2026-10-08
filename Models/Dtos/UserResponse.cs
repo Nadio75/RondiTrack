@@ -1,4 +1,5 @@
-namespace RondiTrack.Models;
+using RondiTrack.Domain;
+namespace RondiTrack.Models.Dtos;
 
 public record UserResponse(
     Guid Id,

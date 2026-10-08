@@ -1,7 +1,8 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Models;
 namespace RondiTrack.Services;
 
-using RondiTrack.Data;
-using RondiTrack.Exceptions;
+using RondiTrack.Domain;
 
 public class StokvelMembershipService
 {
@@ -32,3 +33,4 @@ public class StokvelMembershipService
         }
     }
 }
+

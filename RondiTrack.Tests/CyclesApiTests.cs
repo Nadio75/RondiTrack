@@ -1,3 +1,7 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Infrastructure;
+using RondiTrack.Domain;
+using RondiTrack.Tests.TestSupport;
 namespace RondiTrack.Tests;
 
 using System.Net;
@@ -5,11 +9,12 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using RondiTrack.Models;
 
-public class CyclesApiTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection("Postgres collection")]
+public class CyclesApiTests
 {
     private readonly HttpClient _client;
 
-    public CyclesApiTests(WebApplicationFactory<Program> factory) => _client = factory.CreateClient();
+    public CyclesApiTests(PostgresApiFactory factory) => _client = factory.CreateClient();
 
     // ---------- Happy paths ----------
 
@@ -172,3 +177,6 @@ Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMi
         response.AssertProblem(HttpStatusCode.NotFound);
     }
 }
+
+
+

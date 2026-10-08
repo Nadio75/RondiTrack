@@ -1,3 +1,6 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Models;
+using RondiTrack.Domain;
 // Validation/ValidationFilter.cs
 namespace RondiTrack.Validation;
 

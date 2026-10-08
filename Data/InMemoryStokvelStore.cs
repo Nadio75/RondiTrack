@@ -1,6 +1,8 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Models;
 namespace RondiTrack.Data;
 
-using RondiTrack.Models;
+using RondiTrack.Domain;
 //This is where im gonna be keeping my dummy data.
 public class InMemoryStokvelStore : IStokvelStore
 {
@@ -117,3 +119,4 @@ public class InMemoryStokvelStore : IStokvelStore
         public Task<User?> GetUserByIdReadOnlyAsync(Guid id) => GetUserByIdAsync(id);
     public Task<Stokvel?> GetStokvelByIdReadOnlyAsync(Guid id) => GetStokvelByIdAsync(id);
     }
+

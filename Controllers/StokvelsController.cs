@@ -1,11 +1,11 @@
+using RondiTrack.Infrastructure;
+using RondiTrack.Models;
 namespace RondiTrack.Controllers;
 
 using Microsoft.AspNetCore.Mvc;
-using RondiTrack.Data;
-using RondiTrack.Models;
+using RondiTrack.Domain;
 using RondiTrack.Mapping;
 using RondiTrack.Services;
-using RondiTrack.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using RondiTrack.Models.Dtos;
 using RondiTrack.Helpers;
@@ -588,3 +588,4 @@ public async Task<IActionResult> GetContributions(
     return Ok(response);
 }
 }
+

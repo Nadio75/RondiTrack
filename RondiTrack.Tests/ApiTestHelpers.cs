@@ -1,3 +1,4 @@
+using RondiTrack.Models.Dtos;
 namespace RondiTrack.Tests;
 
 using System.Net;

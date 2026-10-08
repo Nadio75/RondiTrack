@@ -1,5 +1,6 @@
+using RondiTrack.Domain;
 // Models/Dtos/ContributionResponse.cs
-namespace RondiTrack.Models;
+namespace RondiTrack.Models.Dtos;
 
 public record ContributionResponse(Guid Id, Guid StokvelId, Guid UserId, decimal Amount, Guid ContributionCycleId, DateTime CreatedAt)
 {

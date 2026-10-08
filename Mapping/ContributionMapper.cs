@@ -1,3 +1,5 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Domain;
 // Mapping/ContributionMapper.cs
 namespace RondiTrack.Mapping;
 

@@ -1,11 +1,11 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Models;
 // Controllers/ContributionCyclesController.cs
 namespace RondiTrack.Controllers;
 
 using Microsoft.AspNetCore.Mvc;
-using RondiTrack.Data;
-using RondiTrack.Models;
+using RondiTrack.Domain;
 using RondiTrack.Mapping;
-using RondiTrack.Exceptions;
 
 // Nested under a stokvel, since a cycle only ever makes sense in the context of one:
 // /api/stokvels/{stokvelId}/cycles
@@ -240,3 +240,4 @@ public class ContributionCyclesController : ControllerBase
     }
     
 }
+

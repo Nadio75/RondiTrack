@@ -1,3 +1,5 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Domain;
 // Validation/CreateContributionCycleRequestValidator.cs
 namespace RondiTrack.Validation;
 

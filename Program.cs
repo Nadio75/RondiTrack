@@ -1,3 +1,5 @@
+using RondiTrack.Infrastructure;
+using RondiTrack.Domain;
 using Scalar.AspNetCore;    
 using FluentValidation;
 using RondiTrack.Data;
@@ -17,7 +19,7 @@ builder.Services.AddScoped<IStokvelStore, EfStokvelStore>();
 builder.Services.AddSingleton<IContributionStore, InMemoryContributionStore>();
 builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
 builder.Services.AddScoped<PayoutService>();
-builder.Services.AddScoped<IContributionCycleStore, EfContributionCycleStore>();builder.Services.AddDbContext<RondiTrack.Data.RondiTrackDbContext>(options =>
+builder.Services.AddScoped<IContributionCycleStore, EfContributionCycleStore>();builder.Services.AddDbContext<RondiTrack.Infrastructure.RondiTrackDbContext>(options =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("RondiTrack"),
         npgsqlOptions => npgsqlOptions.EnableRetryOnFailure(
@@ -88,3 +90,4 @@ app.Run();
 // Makes the implicit top-level Program class visible to the test project,
 // so WebApplicationFactory<Program> can spin the whole app up for tests.
 public partial class Program { }
+

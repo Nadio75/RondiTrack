@@ -1,3 +1,7 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Infrastructure;
+using RondiTrack.Domain;
+using RondiTrack.Tests.TestSupport;
 namespace RondiTrack.Tests;
 
 using System.Net;
@@ -11,12 +15,13 @@ using RondiTrack.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 
-public class PayoutApiTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection("Postgres collection")]
+public class PayoutApiTests
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
 
-    public PayoutApiTests(WebApplicationFactory<Program> factory)
+    public PayoutApiTests(PostgresApiFactory factory)
     {
         _factory = factory;
         _client = factory.CreateClient();
@@ -130,3 +135,6 @@ public async Task Updating_payout_with_stale_version_returns_409()
     Assert.Equal(409, problem!.Status);
 }
 }
+
+
+

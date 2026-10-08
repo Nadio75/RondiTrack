@@ -27,4 +27,14 @@
     <PackageReference Include="Scalar.AspNetCore" Version="2.17.8" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="RondiTrack.Domain\RondiTrack.Domain.csproj" />
+    <ProjectReference Include="RondiTrack.Infrastructure\RondiTrack.Infrastructure.csproj" />
+  </ItemGroup>
+
+<ItemGroup>
+  <Compile Remove="RondiTrack.Domain\**" />
+  <Compile Remove="RondiTrack.Infrastructure\**" />
+</ItemGroup>
+
 </Project>

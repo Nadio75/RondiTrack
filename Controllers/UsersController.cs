@@ -1,10 +1,10 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Models;
 namespace RondiTrack.Controllers;
 
 using Microsoft.AspNetCore.Mvc;
-using RondiTrack.Data;
-using RondiTrack.Models;
+using RondiTrack.Domain;
 using RondiTrack.Mapping;
-using RondiTrack.Exceptions;
 
 [ApiController]
 [Route("api/users")]
@@ -165,3 +165,4 @@ public class UsersController : ControllerBase
         return NoContent();
     }
 }
+

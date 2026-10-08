@@ -1,3 +1,7 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Infrastructure;
+using RondiTrack.Domain;
+using RondiTrack.Tests.TestSupport;
 namespace RondiTrack.Tests;
 
 using System.Net;
@@ -7,11 +11,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using RondiTrack.Models;
 
 // Proves the idempotency guarantee holds through the real pipeline, not just once in Scalar.
-public class IdempotencyApiTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection("Postgres collection")]
+public class IdempotencyApiTests
 {
     private readonly HttpClient _client;
 
-    public IdempotencyApiTests(WebApplicationFactory<Program> factory) => _client = factory.CreateClient();
+    public IdempotencyApiTests(PostgresApiFactory factory) => _client = factory.CreateClient();
 
     [Fact]
     public async Task The_same_key_and_the_same_body_twice_returns_an_identical_201_the_second_time()
@@ -81,3 +86,6 @@ public class IdempotencyApiTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(HttpStatusCode.Created, retry.StatusCode);
     }
 }
+
+
+

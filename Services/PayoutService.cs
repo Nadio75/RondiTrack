@@ -1,9 +1,10 @@
+using RondiTrack.Infrastructure;
+using RondiTrack.Models.Dtos;
+using RondiTrack.Models;
 namespace RondiTrack.Services;
 
 using Microsoft.EntityFrameworkCore;
-using RondiTrack.Data;
-using RondiTrack.Exceptions;
-using RondiTrack.Models;
+using RondiTrack.Domain;
 
 public class PayoutService
 {
@@ -93,3 +94,4 @@ public class PayoutService
     return payout;
 }
 }
+

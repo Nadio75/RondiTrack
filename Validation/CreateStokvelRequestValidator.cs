@@ -1,3 +1,5 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Domain;
 // Validation/CreateStokvelRequestValidator.cs
 namespace RondiTrack.Validation;
 

@@ -1,3 +1,4 @@
+using RondiTrack.Domain;
 namespace RondiTrack.Mapping;
 
 using RondiTrack.Models;

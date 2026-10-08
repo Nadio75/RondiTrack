@@ -1,3 +1,7 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Infrastructure;
+using RondiTrack.Domain;
+using RondiTrack.Tests.TestSupport;
 namespace RondiTrack.Tests;
 
 using System.Net;
@@ -5,11 +9,12 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using RondiTrack.Models;
 
-public class ContributionsApiTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection("Postgres collection")]
+public class ContributionsApiTests
 {
     private readonly HttpClient _client;
 
-    public ContributionsApiTests(WebApplicationFactory<Program> factory) => _client = factory.CreateClient();
+    public ContributionsApiTests(PostgresApiFactory factory) => _client = factory.CreateClient();
 
     [Fact]
     public async Task Recording_a_contribution_returns_201_with_the_contribution_and_a_location_pointing_to_the_stokvel()
@@ -111,3 +116,6 @@ public class ContributionsApiTests : IClassFixture<WebApplicationFactory<Program
         second.AssertProblem(HttpStatusCode.Conflict);
     }
 }
+
+
+

@@ -1,3 +1,6 @@
+using RondiTrack.Domain;
+using RondiTrack.Models.Dtos;
+using RondiTrack.Infrastructure;
 namespace RondiTrack.Tests;
 
 using RondiTrack.Models;

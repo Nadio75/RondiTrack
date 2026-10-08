@@ -1,3 +1,4 @@
+using RondiTrack.Domain;
 namespace RondiTrack.Tests;
 
 using RondiTrack.Data;
