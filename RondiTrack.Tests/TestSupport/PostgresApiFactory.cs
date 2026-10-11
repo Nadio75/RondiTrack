@@ -11,6 +11,7 @@ using Testcontainers.PostgreSql;
 
 public class PostgresApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
+public bool UseRealAuthentication { get; set; } = false;
     private readonly PostgreSqlContainer _container =
         new PostgreSqlBuilder("postgres:17")
             .WithDatabase("ronditrack_test")
@@ -102,7 +103,10 @@ public async Task EnsureMembershipAsync(
             _container.GetConnectionString());
 
         builder.ConfigureTestServices(services =>
-        {
+{
+    if (UseRealAuthentication)
+        return;
+
             // Replace JWT authentication only in this integration-test host.
             services
                 .AddAuthentication(options =>
