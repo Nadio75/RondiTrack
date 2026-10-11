@@ -404,5 +404,244 @@ public class AuthSecurityTests
             "Treasurer Updated Stokvel",
             json.RootElement.GetProperty("name").GetString());
     }
+[Fact]
+public async Task Treasurer_cannot_delete_stokvel()
+{
+    using var client = CreateClient();
+
+    var (userId, token) = await CreateAuthenticatedUserAsync(client);
+    SetBearerToken(client, token);
+
+    var stokvelId = await CreateStokvelAsync(client);
+
+    await _factory.EnsureMembershipAsync(
+        stokvelId, userId, "Treasurer");
+
+    var response = await client.DeleteAsync(
+        $"/api/stokvels/{stokvelId}");
+
+    Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+    // The stokvel must still exist.
+    var getResponse = await client.GetAsync(
+        $"/api/stokvels/{stokvelId}");
+
+    Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+}
+
+[Fact]
+public async Task Chairperson_can_delete_stokvel()
+{
+    using var client = CreateClient();
+
+    var (userId, token) = await CreateAuthenticatedUserAsync(client);
+    SetBearerToken(client, token);
+
+    var stokvelId = await CreateStokvelAsync(client);
+
+    await _factory.EnsureMembershipAsync(
+        stokvelId, userId, "Chairperson");
+
+    var response = await client.DeleteAsync(
+        $"/api/stokvels/{stokvelId}");
+
+    Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+    var getResponse = await client.GetAsync(
+        $"/api/stokvels/{stokvelId}");
+
+    Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
+}
+
+[Fact]
+public async Task Treasurer_cannot_add_member()
+{
+    using var client = CreateClient();
+
+    var (treasurerId, token) =
+        await CreateAuthenticatedUserAsync(client);
+
+    SetBearerToken(client, token);
+
+    var stokvelId = await CreateStokvelAsync(client);
+
+    await _factory.EnsureMembershipAsync(
+        stokvelId, treasurerId, "Treasurer");
+
+    // Create another user who is not yet a stokvel member.
+    var (newUserId, _) =
+        await CreateAuthenticatedUserAsync(client);
+
+    var response = await client.PostAsJsonAsync(
+        $"/api/stokvels/{stokvelId}/members",
+        new { userId = newUserId });
+
+    Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+}
+
+[Fact]
+public async Task Chairperson_can_add_member()
+{
+    using var client = CreateClient();
+
+    var (chairpersonId, token) =
+        await CreateAuthenticatedUserAsync(client);
+
+    SetBearerToken(client, token);
+
+    var stokvelId = await CreateStokvelAsync(client);
+
+    await _factory.EnsureMembershipAsync(
+        stokvelId, chairpersonId, "Chairperson");
+
+    var (newUserId, _) =
+        await CreateAuthenticatedUserAsync(client);
+
+    var response = await client.PostAsJsonAsync(
+        $"/api/stokvels/{stokvelId}/members",
+        new { userId = newUserId });
+
+    Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+}
+private static async Task<Guid> CreateCycleAsync(
+    HttpClient client,
+    Guid stokvelId)
+{
+    var response = await client.PostAsJsonAsync(
+        $"/api/stokvels/{stokvelId}/cycles",
+        new
+        {
+            period = "2026-10",
+            targetAmount = 1000
+        });
+
+    Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+    using var json = JsonDocument.Parse(
+        await response.Content.ReadAsStringAsync());
+
+    return json.RootElement.GetProperty("id").GetGuid();
+}
+
+private static async Task<HttpResponseMessage> SubmitContributionAsync(
+    HttpClient client,
+    Guid stokvelId,
+    Guid userId,
+    Guid cycleId)
+{
+    using var request = new HttpRequestMessage(
+        HttpMethod.Post,
+        $"/api/stokvels/{stokvelId}/contributions");
+
+    request.Headers.Add(
+        "Idempotency-Key",
+        Guid.NewGuid().ToString());
+
+    request.Content = JsonContent.Create(new
+    {
+        userId,
+        amount = 500,
+        contributionCycleId = cycleId
+    });
+
+    return await client.SendAsync(request);
+}
+
+[Fact]
+public async Task Member_cannot_record_another_members_contribution()
+{
+    using var client = CreateClient();
+
+    var (memberId, memberToken) =
+        await CreateAuthenticatedUserAsync(client);
+
+    var (otherMemberId, _) =
+        await CreateAuthenticatedUserAsync(client);
+
+    var (treasurerId, treasurerToken) =
+        await CreateAuthenticatedUserAsync(client);
+
+    SetBearerToken(client, treasurerToken);
+
+    var stokvelId = await CreateStokvelAsync(client);
+
+    await _factory.EnsureMembershipAsync(
+        stokvelId, treasurerId, "Treasurer");
+
+    await _factory.EnsureMembershipAsync(
+        stokvelId, memberId, "Member");
+
+    await _factory.EnsureMembershipAsync(
+        stokvelId, otherMemberId, "Member");
+
+    var cycleId = await CreateCycleAsync(client, stokvelId);
+
+    SetBearerToken(client, memberToken);
+
+    var response = await SubmitContributionAsync(
+        client, stokvelId, otherMemberId, cycleId);
+
+    Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+}
+
+[Fact]
+public async Task Member_can_record_own_contribution()
+{
+    using var client = CreateClient();
+
+    var (memberId, memberToken) =
+        await CreateAuthenticatedUserAsync(client);
+
+    var (treasurerId, treasurerToken) =
+        await CreateAuthenticatedUserAsync(client);
+
+    SetBearerToken(client, treasurerToken);
+
+    var stokvelId = await CreateStokvelAsync(client);
+
+    await _factory.EnsureMembershipAsync(
+        stokvelId, treasurerId, "Treasurer");
+
+    await _factory.EnsureMembershipAsync(
+        stokvelId, memberId, "Member");
+
+    var cycleId = await CreateCycleAsync(client, stokvelId);
+
+    SetBearerToken(client, memberToken);
+
+    var response = await SubmitContributionAsync(
+        client, stokvelId, memberId, cycleId);
+
+    Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+}
+
+[Fact]
+public async Task Treasurer_can_record_another_members_contribution()
+{
+    using var client = CreateClient();
+
+    var (treasurerId, treasurerToken) =
+        await CreateAuthenticatedUserAsync(client);
+
+    var (memberId, _) =
+        await CreateAuthenticatedUserAsync(client);
+
+    SetBearerToken(client, treasurerToken);
+
+    var stokvelId = await CreateStokvelAsync(client);
+
+    await _factory.EnsureMembershipAsync(
+        stokvelId, treasurerId, "Treasurer");
+
+    await _factory.EnsureMembershipAsync(
+        stokvelId, memberId, "Member");
+
+    var cycleId = await CreateCycleAsync(client, stokvelId);
+
+    var response = await SubmitContributionAsync(
+        client, stokvelId, memberId, cycleId);
+
+    Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+}
 
 }
