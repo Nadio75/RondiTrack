@@ -1,3 +1,4 @@
+using RondiTrack.Domain;
 namespace RondiTrack.Tests;
 
 using RondiTrack.Data;
@@ -19,7 +20,7 @@ public class StokvelMembershipServiceTests
 
     private async Task<(Stokvel stokvel, User user)> ArrangeStokvelAndUserAsync()
     {
-        var user = new User("Test Member", "0800000000");
+        var user = new User("Test Member", "0800000000", "Test Member@example.com");
         await _store.AddUserAsync(user);
 
         var stokvel = new Stokvel("Test Stokvel", 500m);
@@ -63,7 +64,7 @@ public class StokvelMembershipServiceTests
     [Fact]
     public async Task Adding_a_user_to_a_stokvel_that_does_not_exist_throws_NotFoundException()
     {
-        var user = new User("Test Member", "0800000000");
+        var user = new User("Test Member", "0800000000", "Test Member@example.com");
         await _store.AddUserAsync(user);
 
         await Assert.ThrowsAsync<NotFoundException>(

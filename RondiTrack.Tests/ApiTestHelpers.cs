@@ -1,8 +1,10 @@
+using RondiTrack.Models.Dtos;
 namespace RondiTrack.Tests;
 
 using System.Net;
 using System.Net.Http.Json;
 using RondiTrack.Models;
+using RondiTrack.Tests.TestSupport;
 
 // A stokvel with one member and one cycle: everything needed to record a contribution.
 public record ApiScenario(StokvelResponse Stokvel, UserResponse User, ContributionCycleResponse Cycle);
@@ -38,14 +40,40 @@ internal static class ApiTestHelpers
     public static Task<HttpResponseMessage> AddMemberAsync(this HttpClient client, Guid stokvelId, Guid userId) =>
         client.PostAsJsonAsync($"/api/stokvels/{stokvelId}/members", new { userId });
 
-    public static async Task<ApiScenario> ArrangeMemberWithCycleAsync(this HttpClient client)
-    {
-        var stokvel = await client.CreateStokvelAsync();
-        var user = await client.CreateUserAsync();
-        (await client.AddMemberAsync(stokvel.Id, user.Id)).EnsureSuccessStatusCode();
-        var cycle = await client.CreateCycleAsync(stokvel.Id);
-        return new ApiScenario(stokvel, user, cycle);
-    }
+   public static void UseTestUser(this HttpClient client, Guid userId)
+{
+    client.DefaultRequestHeaders.Remove("X-Test-UserId");
+
+    client.DefaultRequestHeaders.Add(
+        "X-Test-UserId",
+        userId.ToString());
+}
+
+public static async Task<ApiScenario> ArrangeMemberWithCycleAsync(
+    this HttpClient client,
+    PostgresApiFactory factory)
+{
+    // Create a stokvel. It starts with zero members.
+    var stokvel = await client.CreateStokvelAsync();
+
+    // Create a real user in the test database.
+    var user = await client.CreateUserAsync();
+
+    // Test-only setup: give this user Chairperson membership.
+    // This does NOT change the production API's creation rules.
+    await factory.EnsureMembershipAsync(
+        stokvel.Id,
+        user.Id,
+        "Chairperson");
+
+    // Make the authenticated test caller this user.
+    client.UseTestUser(user.Id);
+
+    // A Chairperson is allowed to open a contribution cycle.
+    var cycle = await client.CreateCycleAsync(stokvel.Id);
+
+    return new ApiScenario(stokvel, user, cycle);
+}
 
     public static object ContributionBody(ApiScenario s, decimal amount = 500m) =>
         new { userId = s.User.Id, amount, contributionCycleId = s.Cycle.Id };
@@ -68,4 +96,20 @@ internal static class ApiTestHelpers
         Assert.Equal(expected, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
     }
+    public static async Task<UserResponse> ArrangeChairpersonAsync(
+    this HttpClient client,
+    PostgresApiFactory factory,
+    Guid stokvelId)
+{
+    var user = await client.CreateUserAsync();
+
+    await factory.EnsureMembershipAsync(
+        stokvelId,
+        user.Id,
+        "Chairperson");
+
+    client.UseTestUser(user.Id);
+
+    return user;
+}
 }

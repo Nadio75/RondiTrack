@@ -1,3 +1,4 @@
+using RondiTrack.Domain;
 // Exceptions/RondiTrackExceptionHandler.cs
 namespace RondiTrack.Exceptions;
 
@@ -80,3 +81,4 @@ public class RondiTrackExceptionHandler : IExceptionHandler
     return true;
 }
 }
+

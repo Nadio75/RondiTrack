@@ -823,3 +823,693 @@ Row 19 has no dedicated integration test yet and no `EndpointSummary` block to t
 - **The idempotency key is still compared against the request body only, not the stokvel id in the URL** (carried over from Assignment 4.4, unchanged).
 - **Contributions and idempotency keys are still in-memory** (carried over from Assignment 5.1, unchanged — `IContributionStore` and `IIdempotencyStore` were never swapped to EF Core).
 - **No optimistic concurrency control.** Named explicitly in Assignment 5.1's gaps and still true today; the course names this as a dedicated later topic (`xmin`-based concurrency), so it's deferred on purpose.
+
+# RondiTrack — Stokvel Tracker
+
+RondiTrack is an ASP.NET Core Web API for managing stokvels, members, contribution cycles, contributions, and payouts.
+
+The project uses:
+
+- ASP.NET Core
+- Entity Framework Core
+- PostgreSQL
+- Npgsql
+- xUnit integration tests
+- Scalar for API testing
+
+---
+
+# Assignment 5.3 — Optimizations, Concurrency & Database Defense
+
+## 1. Assignment Overview
+
+Assignment 5.3 focused on making RondiTrack safer and more efficient when the application contains a large amount of data and when multiple users attempt to modify data at the same time.
+
+The assignment required improvements in three main areas:
+
+1. **Database performance**
+2. **Database integrity**
+3. **Optimistic concurrency**
+
+The main goal was to ensure that important work happens in PostgreSQL rather than unnecessarily inside the C# application, while also making PostgreSQL the final authority for rules that must always remain true.
+
+---
+
+# 2. What Was Required
+
+The assignment required the following:
+
+- Audit list endpoints and repositories for filtering, sorting, or paging happening after data had already been loaded into memory.
+- Move filtering, sorting, and paging into the database.
+- Introduce a pagination contract.
+- Paginate the contributions endpoint.
+- Paginate at least one additional list endpoint.
+- Support a sensible default page size.
+- Apply a server-side maximum page size.
+- Reject negative page sizes with HTTP 400.
+- Use an opaque page token.
+- Use deterministic ordering with a unique tie-breaker.
+- Explicitly allow only supported sorting/filtering fields.
+- Return `ProblemDetails` for malformed or unknown sorting/filtering requests.
+- Define behaviour for page-token reuse with different filter/sort settings.
+- Decide whether total counts are returned.
+- Choose and justify offset or keyset pagination.
+- Capture the generated SQL.
+- Seed at least 10,000 contributions.
+- Run `EXPLAIN ANALYZE` before and after adding a composite index.
+- Explain the query plan and performance difference.
+- Enforce at least two existing multi-column uniqueness rules in PostgreSQL.
+- Check for existing duplicate data before adding uniqueness constraints.
+- Inspect migrations for potential locking/cost problems.
+- Centrally translate PostgreSQL SQLSTATE `23505` into HTTP 409 Conflict.
+- Use PostgreSQL `xmin` for optimistic concurrency.
+- Protect entities that can be edited after creation.
+- Round-trip the concurrency token through HTTP.
+- Reject stale updates with HTTP 409 or 412.
+- Create deterministic concurrency tests using two independent `DbContext` instances.
+- Create an HTTP-level stale-token concurrency test.
+- Rerun the complete test suite.
+- Document the work and decisions.
+
+---
+
+# 3. Database-Side Filtering, Sorting and Paging
+
+## Why this was necessary
+
+A list endpoint can become inefficient if the application loads a large number of records into C# and only then filters, sorts, or pages them.
+
+For example, an inefficient approach would effectively do this:
+
+```text
+PostgreSQL
+    ↓
+Return thousands of rows
+    ↓
+C# loads all rows into memory
+    ↓
+C# filters them
+    ↓
+C# sorts them
+    ↓
+C# takes the first 20
+
+---
+
+# Assignment 5.4 — Clean Architecture & Self-Contained Tests
+
+## 1. Assignment Overview
+
+Assignment 5.4 focused on restructuring RondiTrack into a cleaner architecture and making the integration test suite independent of the developer's local PostgreSQL database.
+
+The assignment had three main goals:
+
+1. Split the application into Domain, Infrastructure, and API projects with a clear dependency direction.
+2. Audit dependency-injection lifetimes so that services using Entity Framework Core follow the correct `DbContext` lifetime.
+3. Move integration tests to an isolated PostgreSQL database using Testcontainers so the complete test suite can run without the development database.
+
+No new API features or endpoints were added as part of this refactor. Existing behaviour and test assertions were preserved.
+
+---
+
+## 2. Final Project Structure
+
+The solution is now split into four projects:
+
+```text
+RondiTrack.slnx
+│
+├── RondiTrack.Domain
+│   ├── Models
+│   │   ├── Contribution.cs
+│   │   ├── ContributionCycle.cs
+│   │   ├── Payout.cs
+│   │   ├── StokvelMember.cs
+│   │   ├── Stokvels.cs
+│   │   └── Users.cs
+│   │
+│   ├── Exceptions
+│   │   ├── BusinessRuleViolationException.cs
+│   │   ├── ConflictException.cs
+│   │   ├── IdempotencyConflictException.cs
+│   │   ├── NotFoundException.cs
+│   │   └── RondiTrackException.cs
+│   │
+│   └── Data
+│       ├── IContributionCycleStore.cs
+│       ├── IContributionStore.cs
+│       ├── IIdempotencyStore.cs
+│       ├── IStokvelStore.cs
+│       └── IdempotencyRecord.cs
+│
+├── RondiTrack.Infrastructure
+│   ├── Data
+│   │   ├── RondiTrackDbContext.cs
+│   │   ├── EfContributionCycleStore.cs
+│   │   ├── EfStokvelStore.cs
+│   │   └── VolumeSeeder.cs
+│   │
+│   └── Migrations
+│       └── EF Core migrations
+│
+├── RondiTrack
+│   ├── Controllers
+│   ├── Models
+│   ├── Services
+│   ├── Mapping
+│   ├── Validation
+│   ├── Helpers
+│   └── Program.cs
+│
+└── RondiTrack.Tests
+    ├── API/integration tests
+    └── TestSupport
+        └── PostgresApiFactory.cs
+
+
+
+# Assignment 6.1 — Authentication & Stokvel-Scoped Authorization
+
+## 1. Overview
+
+Assignment 6.1 focuses on securing the RondiTrack API by introducing authentication and stokvel-specific authorization.
+
+Previously, the application allowed users to access stokvel information without a complete authentication and authorization system. This created a security risk because stokvels manage financial information, including contributions and payouts.
+
+The objective of this assignment is to ensure that:
+
+- Users can register and log in securely.
+- Passwords are stored as hashes rather than plain text.
+- Authenticated users receive short-lived JWT access tokens.
+- Refresh tokens allow users to obtain new access tokens without logging in repeatedly.
+- Refresh tokens can only be used once and can be revoked.
+- API endpoints are protected by default.
+- Users can access only the stokvels they belong to.
+- Permissions depend on the user's role within each individual stokvel.
+- Security rules are enforced using ASP.NET Core authorization policies.
+- Integration tests verify that the security mechanisms work correctly.
+
+The main principle is that **authentication establishes who a user is, while authorization determines what that user is allowed to do.**
+
+---
+
+## 2. User Registration and Password Security
+
+### Registration endpoint
+
+`POST /api/auth/register`
+
+Users can create an account by providing their registration information, including an email address and password.
+
+The existing `User` entity was extended to support authentication rather than creating a separate user table.
+
+### Password hashing
+
+RondiTrack uses ASP.NET Core's `PasswordHasher<User>` to hash passwords before storing them in PostgreSQL.
+
+A password hash is a protected representation of a password. The application does not need to store the original password to verify it during login.
+
+For example:
+
+- User enters a password during registration.
+- The application hashes the password.
+- The hash is stored in the database.
+- During login, the entered password is checked against the stored hash.
+
+### Registration validation
+
+The registration requirements include:
+
+- Passwords must contain at least 12 characters.
+- FluentValidation validates registration requests.
+- Invalid registration requests return HTTP 400.
+- Duplicate email addresses return HTTP 409.
+- Email addresses are normalized to prevent case-based duplicates.
+- A unique database index protects against duplicate normalized emails.
+
+This means that `Member@Example.com` and `member@example.com` must not be registered as separate accounts.
+
+---
+
+## 3. JWT Authentication
+
+### Login endpoint
+
+`POST /api/auth/login`
+
+After successful login, the application issues a JWT access token.
+
+JWT stands for JSON Web Token. It allows the API to identify an authenticated user without requiring the user to submit their password with every request.
+
+The frontend sends the access token in the authorization header:
+
+```http
+Authorization: Bearer <access-token>
+```
+
+### Access-token lifetime
+
+Assignment 6.1 requires access tokens to expire within 15 minutes.
+
+**Implementation value to verify:** `[Enter the configured access-token lifetime]`
+
+Short-lived tokens reduce the amount of time a stolen access token can be used.
+
+### ClockSkew
+
+ClockSkew controls how much additional time the JWT validation system allows for differences between server clocks.
+
+**Implementation value to verify:** `[Enter the configured ClockSkew]`
+
+A small ClockSkew makes token expiration more predictable. A zero ClockSkew enforces the expiration time without an additional grace period, but assumes the clocks involved are synchronized.
+
+### JWT claims
+
+JWT claims contain information about the authenticated user.
+
+RondiTrack should include only the identity information necessary to identify the caller.
+
+**Actual claims to verify:** `[List the claims issued by JwtTokenService.cs]`
+
+Stable identity claims can safely remain in the token until it expires. Stokvel-specific roles should not be included because membership and role assignments may change while a token is still valid.
+
+---
+
+## 4. Refresh Tokens
+
+### Refresh endpoint
+
+`POST /api/auth/refresh`
+
+Refresh tokens allow users to obtain new access tokens without entering their credentials every few minutes.
+
+Unlike access tokens, refresh tokens are random opaque values rather than JWTs.
+
+### Refresh-token storage
+
+RondiTrack uses PostgreSQL to store refresh-token records.
+
+The raw refresh-token value must not be stored in the database. Instead, the application stores its hash.
+
+This reduces the risk of an attacker using refresh tokens directly if database records are exposed.
+
+### Refresh-token rotation
+
+Each refresh token is intended to work only once.
+
+The rotation process is:
+
+1. The user logs in and receives a refresh token.
+2. The refresh token is stored in a secure cookie.
+3. The access token expires.
+4. The frontend calls the refresh endpoint.
+5. The server validates the refresh token.
+6. The existing refresh token is invalidated.
+7. A new refresh token is issued.
+8. The new token replaces the previous cookie.
+
+This process is called **refresh-token rotation**.
+
+### Refresh-token reuse detection
+
+If someone tries to use an already-used refresh token, the server treats this as a possible token theft or replay attack.
+
+The required behavior is to revoke the refresh-token family associated with that login session.
+
+For example:
+
+- Token A is used and replaced with Token B.
+- Someone attempts to use Token A again.
+- The server detects that Token A has already been used.
+- Token A is rejected with HTTP 401.
+- Token B and any other descendants from the same session are also revoked.
+
+The legitimate user must log in again after the session is revoked.
+
+This provides additional protection if an old refresh token has been stolen.
+
+### Logout
+
+`POST /api/auth/logout`
+
+Logout revokes the session's refresh tokens so that they can no longer be used to obtain new access tokens.
+
+Logout is intended to be idempotent, meaning that logging out repeatedly should not cause an unexpected error.
+
+---
+
+## 5. Refresh-Token Cookie Security
+
+The refresh token is delivered through an HTTP cookie rather than being returned in a JSON response body.
+
+The assignment requires the cookie settings to be explained.
+
+| Cookie setting | Purpose |
+|---|---|
+| `HttpOnly` | Prevents JavaScript from directly reading the refresh token |
+| `Secure` | Restricts cookie transmission to HTTPS |
+| `SameSite` | Helps control cross-site cookie requests and reduce CSRF risk |
+| `Path` | Restricts which URL paths receive the cookie |
+
+**Actual cookie configuration to verify:**
+
+- HttpOnly: `[Actual value]`
+- Secure: `[Actual value]`
+- SameSite: `[Actual value]`
+- Path: `[Actual value]`
+
+### Recommended frontend token storage
+
+The access token should preferably be stored in frontend application memory rather than localStorage.
+
+The refresh token should remain in an HttpOnly cookie managed by the browser.
+
+Storing tokens in localStorage creates additional risk because JavaScript running in the page can read them. A successful cross-site scripting attack could therefore expose those tokens.
+
+HttpOnly cookies prevent direct JavaScript access to the refresh token, although they do not eliminate every web security risk. Cookie-based authentication must still consider CSRF protection and secure transport.
+
+---
+
+## 6. Secure by Default
+
+RondiTrack uses ASP.NET Core authentication and authorization middleware.
+
+The assignment requires a fallback authorization policy so that endpoints require authentication unless explicitly marked as public.
+
+For example:
+
+```csharp
+[AllowAnonymous]
+```
+
+This attribute allows an endpoint to be accessed without authentication.
+
+Public endpoints include registration and login. The OpenAPI and Scalar documentation endpoints must also remain accessible without an access token.
+
+### HTTP 401 — Unauthorized
+
+A 401 response means the caller has not successfully authenticated.
+
+Examples include:
+
+- No access token was supplied.
+- An access token is invalid.
+- An access token has expired.
+
+### HTTP 403 — Forbidden
+
+A 403 response means the caller is authenticated but does not have the permission required for the requested operation.
+
+Authentication and authorization failures must use the API's consistent `application/problem+json` response format.
+
+---
+
+## 7. Stokvel-Scoped Authorization
+
+This is the main security requirement of Assignment 6.1.
+
+In RondiTrack, a user can belong to multiple stokvels and have a different role in each one.
+
+For example:
+
+A user might be:
+
+- Chairperson of Stokvel A.
+- Treasurer of Stokvel B.
+- Ordinary Member of Stokvel C.
+
+Therefore, the user's role cannot be treated as one global permission.
+
+### Database membership checks
+
+Authorization uses the `StokvelMember` records stored in PostgreSQL.
+
+The application checks whether the authenticated user belongs to the requested stokvel and whether their role permits the operation.
+
+The authorization implementation is separated into components such as:
+
+- `IStokvelAccessService.cs`
+- `StokvelAccessService.cs`
+- `StokvelAccessResource.cs`
+- `StokvelRoleRequirement.cs`
+- `StokvelRoleHandler.cs`
+
+These components support membership lookups, authorization requirements, and resource-based permission decisions.
+
+### Why stokvel roles are not stored in the JWT
+
+A JWT represents information at the time it was issued.
+
+Suppose a user logs in at 09:00 as a Treasurer. At 09:05, the Chairperson removes their Treasurer role.
+
+If the role were stored only inside the JWT, the user might continue accessing Treasurer operations until the token expires.
+
+Checking the database ensures that the application uses the user's current stokvel membership and role.
+
+---
+
+## 8. HTTP 404 vs HTTP 403
+
+RondiTrack distinguishes between users who do not belong to a stokvel and users who belong but lack permission.
+
+### Non-member — HTTP 404
+
+A user who does not belong to a stokvel receives HTTP 404.
+
+This prevents the API from revealing whether a private stokvel exists.
+
+For example, a user should not be able to guess stokvel IDs and discover other people's financial groups.
+
+### Member without permission — HTTP 403
+
+A user who belongs to the stokvel but lacks the required role receives HTTP 403.
+
+For example, an ordinary Member may be allowed to view contribution information but not process payouts.
+
+Returning 403 is appropriate because the user is already authorized to know that the stokvel exists.
+
+This distinction helps prevent unnecessary information leakage.
+
+---
+
+## 9. Stokvel Authorization Matrix
+
+The following table represents the required authorization design. The exact behavior of each implemented endpoint must be verified against the controllers and integration tests.
+
+| Operation | Non-member | Member | Treasurer / Chairperson | Platform admin |
+|---|---|---|---|---|
+| View stokvel | 404 | 200 | 200 | To verify |
+| View contribution cycles | 404 | 200 | 200 | To verify |
+| View contributions | 404 | 200 | 200 | To verify |
+| Record own contribution | 404 | Success | Success | To verify |
+| Record another member's contribution | 404 | 403 | Success | To verify |
+| Open contribution cycle | 404 | 403 | Success | To verify |
+| Process payout | 404 | 403 | Success | To verify |
+| Delete stokvel | 404 | 403 | Chairperson only | To verify |
+| Add stokvel member | 404 | 403 | Chairperson only | To verify |
+
+Unauthenticated callers should receive HTTP 401 before stokvel-specific authorization is evaluated.
+
+The platform-admin column depends on the application's chosen platform-level permission design.
+
+---
+
+## 10. Role-Based vs Policy-Based Authorization
+
+ASP.NET Core supports multiple ways of restricting access.
+
+### Role-based authorization
+
+Role-based authorization checks whether the authenticated user has a particular role.
+
+A typical example is:
+
+```csharp
+[Authorize(Roles = "Admin")]
+```
+
+This approach is useful for platform-wide roles that are not tied to an individual stokvel.
+
+If the permitted role changes, the role restriction must be updated.
+
+### Policy-based authorization
+
+Policy-based authorization evaluates authorization requirements through registered policies and handlers.
+
+In RondiTrack, this is more suitable for stokvel operations because the user's permission depends on the stokvel being accessed.
+
+A custom authorization handler can check:
+
+- The authenticated user's ID.
+- The stokvel being requested.
+- Whether a membership record exists.
+- The role associated with that membership.
+- Whether the operation requires Member, Treasurer, or Chairperson permissions.
+
+If a stokvel permission rule changes, the relevant policy or authorization handler can be updated rather than scattering role checks throughout controllers.
+
+### Why RondiTrack uses policies
+
+Policy-based authorization provides a centralized and reusable way to enforce stokvel-specific rules.
+
+It also separates security decisions from the controllers that handle API requests.
+
+**Implementation check:** Identify the exact platform-level operation using a plain role check and document it here. Assignment 6.1 requires exactly one such use.
+
+---
+
+## 11. JWT Signing Key and Secrets
+
+JWTs are signed using a secret key.
+
+The assignment requires the signing key to:
+
+- Be at least 32 bytes.
+- Be stored in .NET user-secrets during development.
+- Never appear in committed configuration files.
+- Never be written to application logs.
+- Cause startup to fail with a helpful error when missing.
+
+The application should read the signing key from configuration and validate it during startup.
+
+User-secrets allow development credentials to remain outside the Git repository.
+
+No actual signing key should be included in this README.
+
+---
+
+## 12. Security Logging
+
+Authentication-related logs must not expose passwords, access tokens, or refresh tokens.
+
+The assignment requires an example of logs generated during login and refresh.
+
+**Insert a sanitized excerpt from actual application logs here.**
+
+Example format only — not a captured RondiTrack log:
+
+```text
+Information: Login request processed.
+Information: Authentication successful.
+Information: Refresh request processed.
+Information: Refresh token rotated successfully.
+```
+
+The actual log excerpt must be reviewed to confirm that it contains no passwords, raw refresh tokens, JWT access tokens, or other sensitive credentials.
+
+---
+
+## 13. Testing
+
+RondiTrack uses xUnit and Testcontainers with PostgreSQL for integration testing.
+
+Testcontainers starts an isolated PostgreSQL database in Docker, allowing tests to run without depending on existing records in the developer's database.
+
+### Latest confirmed test results
+
+```text
+Passed! - Failed: 0, Passed: 106, Skipped: 0, Total: 106
+
+Test summary:
+Total: 106
+Failed: 0
+Succeeded: 106
+Skipped: 0
+
+Build succeeded.
+```
+
+All 106 tests in the latest complete test run passed.
+
+### Run the tests
+
+From the repository root:
+
+```powershell
+dotnet test .\RondiTrack.Tests\RondiTrack.Tests.csproj --logger "console;verbosity=quiet"
+```
+
+### Authentication and authorization test requirements
+
+Assignment 6.1 requires tests demonstrating:
+
+- Missing authentication token returns HTTP 401 with ProblemDetails.
+- A non-member receives HTTP 404.
+- A member without the required role receives HTTP 403.
+- A Treasurer can successfully perform a privileged operation.
+- A Member can record their own contribution.
+- A Member cannot record someone else's contribution.
+- Refresh-token rotation invalidates the previous token.
+- Replaying an old refresh token revokes the token family.
+- Refreshing after logout returns HTTP 401.
+- Incorrect passwords and unknown email addresses return identical problem details.
+
+**Verification status:** The existing test suite passed 106/106 tests. Dedicated coverage of every authentication and authorization scenario listed above has not yet been confirmed.
+
+The assignment also requires running the tests with the development PostgreSQL database stopped. That condition should be confirmed separately before submission.
+
+### Existing test compatibility
+
+Existing integration tests were adapted to authenticate using the test authentication handler and to arrange the appropriate stokvel memberships.
+
+This allows the tests to focus on the behavior being tested without depending on real login credentials for every request.
+
+The test fixture uses a Testcontainers PostgreSQL instance and applies EF Core migrations before running database-backed tests.
+
+---
+
+## 14. Database Changes
+
+Assignment 6.1 introduces additional database support for authentication.
+
+### User authentication fields
+
+The existing User entity was extended to support password hashing and email-based authentication.
+
+Migration:
+
+```text
+20261009113835_AddUserAuthenticationFields
+```
+
+### Refresh-token storage
+
+Refresh-token records are stored in PostgreSQL to support session tracking, rotation, revocation, and reuse detection.
+
+Migration:
+
+```text
+20261010184610_AddRefreshTokens
+```
+
+The Entity Framework Core model snapshot was also updated.
+
+These migrations are committed as part of the assignment.
+
+---
+
+## 15. Known Gaps and Remaining Verification
+
+The following items should be reviewed before final submission:
+
+1. **Dedicated security test coverage:** Confirm that every required authentication, refresh-token, and authorization scenario has an integration test.
+2. **Development database independence:** Confirm that the complete test suite passes while the development PostgreSQL database is stopped.
+3. **First Chairperson assignment:** Newly created stokvels currently do not automatically assign their creator as Chairperson. A secure initial membership workflow still needs to be defined.
+4. **Implementation documentation:** Confirm the actual JWT lifetime, ClockSkew, JWT claims, refresh-cookie settings, and platform-level role check.
+5. **Security logs:** Capture and review actual login and refresh logs without exposing secrets.
+
+These gaps are recorded explicitly rather than claiming that unverified requirements have been completed.
+
+---
+
+## 16. Conclusion
+
+Assignment 6.1 introduces authentication and stokvel-specific authorization to RondiTrack.
+
+The main improvements include password hashing, JWT authentication, PostgreSQL-backed refresh-token management, authorization policies, database-backed stokvel membership checks, and protection against unauthorized access to financial operations.
+
+The implementation separates user identity from stokvel permissions so that one user can have different responsibilities in different stokvels.
+
+The latest complete test run passed all 106 existing tests.
+
+The remaining work is to verify the assignment's dedicated security scenarios and document the exact implementation choices before final submission.

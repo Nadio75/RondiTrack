@@ -1,14 +1,16 @@
+using RondiTrack.Infrastructure;
+using RondiTrack.Models;
 namespace RondiTrack.Controllers;
 
 using Microsoft.AspNetCore.Mvc;
-using RondiTrack.Data;
-using RondiTrack.Models;
+using RondiTrack.Domain;
 using RondiTrack.Mapping;
 using RondiTrack.Services;
-using RondiTrack.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using RondiTrack.Models.Dtos;
 using RondiTrack.Helpers;
+using RondiTrack.Authorization;
+using System.Security.Claims;
 
 [ApiController]
 [Route("api/stokvels")]
@@ -19,19 +21,22 @@ public class StokvelsController : ControllerBase
     private readonly RecordContributionService _contributionService;
     private readonly PayoutService _payoutService;
     private readonly RondiTrackDbContext _db;
+    private readonly IStokvelAccessService _stokvelAccess;
 
     public StokvelsController(
         IStokvelStore store,
         StokvelMembershipService membershipService,
         RecordContributionService contributionService,
         PayoutService payoutService,
-        RondiTrackDbContext db)
+        RondiTrackDbContext db
+        , IStokvelAccessService stokvelAccess)
     {
         _store = store;
         _membershipService = membershipService;
         _contributionService = contributionService;
         _payoutService = payoutService;
         _db = db;
+        _stokvelAccess = stokvelAccess;
     }
 
     [HttpGet]
@@ -85,6 +90,9 @@ public class StokvelsController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<ActionResult<StokvelResponse>> GetById(Guid id)
     {
+        var denied = await CheckStokvelAccessAsync(id, "Member");
+        if (denied is not null)
+        return denied;
         var stokvel = await _store.GetStokvelByIdReadOnlyAsync(id);
         if (stokvel is null) throw new NotFoundException("Stokvel not found.");
         return Ok(StokvelMapper.ToResponse(stokvel));
@@ -106,6 +114,9 @@ public async Task<IActionResult> GetMembers(
     [FromQuery] string? page_token = null,
     [FromQuery] string? sort = null)
 {
+    var denied = await CheckStokvelAccessAsync(id, "Member");
+if (denied is not null)
+    return denied;
     // Confirm the stokvel exists
     var stokvelExists = await _db.Stokvels.AsNoTracking().AnyAsync(s => s.Id == id);
     if (!stokvelExists)
@@ -275,10 +286,13 @@ public async Task<IActionResult> GetMembers(
     [ProducesResponseType<StokvelResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
-    public async Task<ActionResult<StokvelResponse>> Update(Guid id, CreateStokvelRequest request)
-    {
-        var stokvel = await _store.GetStokvelByIdAsync(id);
-        if (stokvel is null) throw new NotFoundException("Stokvel not found.");
+   public async Task<ActionResult<StokvelResponse>> Update(Guid id, CreateStokvelRequest request)
+{
+    var denied = await CheckStokvelAccessAsync(id, "TreasurerOrChairperson");
+    if (denied is not null)
+        return denied;
+
+    var stokvel = await _store.GetStokvelByIdAsync(id);if (stokvel is null) throw new NotFoundException("Stokvel not found.");
 
         try
         {
@@ -309,6 +323,9 @@ public async Task<IActionResult> GetMembers(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        var denied = await CheckStokvelAccessAsync(id, "Chairperson");
+        if (denied is not null)
+            return denied;
         var deleted = await _store.DeleteStokvelAsync(id);
         if (!deleted) throw new NotFoundException("Stokvel not found.");
         return NoContent();
@@ -337,6 +354,9 @@ public async Task<IActionResult> GetMembers(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> AddMember(Guid id, AddMemberRequest request)
     {
+        var denied = await CheckStokvelAccessAsync(id, "Chairperson");
+        if (denied is not null)
+            return denied;
         // No switch, no ToProblem — if this throws, the handler answers. If it doesn't, it worked.
         await _membershipService.AddMemberAsync(id, request.UserId);
         return NoContent();
@@ -403,6 +423,33 @@ public async Task<IActionResult> GetMembers(
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         ContributionRequest request)
     {
+        var memberCheck = await CheckStokvelAccessAsync(id, "Member");
+
+if (memberCheck is not null)
+    return memberCheck;
+
+var callerIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier)
+    ?? User.FindFirstValue("sub");
+
+if (!Guid.TryParse(callerIdValue, out var callerId))
+{
+    return Unauthorized(new ProblemDetails
+    {
+        Status = StatusCodes.Status401Unauthorized,
+        Title = "Authentication required",
+        Detail = "A valid authenticated user ID is required."
+    });
+}
+
+if (request.UserId != callerId)
+{
+    var elevatedCheck = await CheckStokvelAccessAsync(
+        id,
+        "TreasurerOrChairperson");
+
+    if (elevatedCheck is not null)
+        return elevatedCheck;
+}
         if (string.IsNullOrWhiteSpace(idempotencyKey))
             throw new BusinessRuleViolationException("An Idempotency-Key header is required.");
 
@@ -421,6 +468,9 @@ public async Task<IActionResult> GetMembers(
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
 public async Task<IActionResult> GetPayout(Guid id, Guid cycleId)
 {
+    var denied = await CheckStokvelAccessAsync(id, "Member");
+if (denied is not null)
+    return denied;
     var payout = await _db.Payouts
         .AsNoTracking()
         .FirstOrDefaultAsync(p =>
@@ -449,6 +499,9 @@ public async Task<IActionResult> UpdatePayout(
     Guid cycleId,
     UpdatePayoutRequest request)
 {
+    var denied = await CheckStokvelAccessAsync(id, "TreasurerOrChairperson");
+if (denied is not null)
+    return denied;
     var payout = await _payoutService.UpdateAmountAsync(
         id,
         cycleId,
@@ -475,8 +528,14 @@ public async Task<IActionResult> UpdatePayout(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> ProcessPayout(Guid id, Guid cycleId)
     {
-        var payout = await _payoutService.ProcessAsync(id, cycleId);
-        return CreatedAtAction(nameof(GetById), new { id }, RondiTrack.Mapping.PayoutMapper.ToResponse(payout));
+        var denied = await CheckStokvelAccessAsync(
+        id,
+        "TreasurerOrChairperson");
+
+        if (denied is not null)
+        return denied;
+            var payout = await _payoutService.ProcessAsync(id, cycleId);
+            return CreatedAtAction(nameof(GetById), new { id }, RondiTrack.Mapping.PayoutMapper.ToResponse(payout));
     }
 
     
@@ -496,6 +555,9 @@ public async Task<IActionResult> GetContributions(
     [FromQuery] string? page_token = null,
     [FromQuery] string? sort = null)
 {
+    var denied = await CheckStokvelAccessAsync(id, "Member");
+if (denied is not null)
+    return denied;
     // --- page size rules ---
     const int DefaultPageSize = 20;
     const int MaxPageSize = 100;
@@ -587,4 +649,37 @@ public async Task<IActionResult> GetContributions(
 
     return Ok(response);
 }
+private async Task<ActionResult?> CheckStokvelAccessAsync(
+    Guid stokvelId,
+    string requiredRole)
+{
+    var result = await _stokvelAccess.CheckAsync(
+        User,
+        stokvelId,
+        requiredRole);
+
+    return result switch
+    {
+        StokvelAccessResult.Allowed => null,
+
+        StokvelAccessResult.NotFound => NotFound(new ProblemDetails
+        {
+            Status = StatusCodes.Status404NotFound,
+            Title = "Not found",
+            Detail = "The stokvel was not found."
+        }),
+
+        StokvelAccessResult.Forbidden => StatusCode(
+            StatusCodes.Status403Forbidden,
+            new ProblemDetails
+            {
+                Status = StatusCodes.Status403Forbidden,
+                Title = "Forbidden",
+                Detail = "Your role does not permit this operation."
+            }),
+
+        _ => StatusCode(StatusCodes.Status500InternalServerError)
+    };
 }
+}
+

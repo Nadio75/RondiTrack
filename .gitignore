@@ -480,3 +480,9 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Assignment 6.1 - Local notes and test results
+/assignment-6.1-context.txt
+/failed-tests-6.1.txt
+/test-results-6.1.txt
+/test-results-6.1-after-helper.txt

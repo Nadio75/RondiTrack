@@ -1,3 +1,7 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Infrastructure;
+using RondiTrack.Domain;
+using RondiTrack.Tests.TestSupport;
 namespace RondiTrack.Tests;
 
 using System.Net;
@@ -5,16 +9,22 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using RondiTrack.Models;
 
-public class ContributionsApiTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection("Postgres collection")]
+public class ContributionsApiTests
 {
     private readonly HttpClient _client;
+    private readonly PostgresApiFactory _factory;
 
-    public ContributionsApiTests(WebApplicationFactory<Program> factory) => _client = factory.CreateClient();
+    public ContributionsApiTests(PostgresApiFactory factory)
+    {
+        _factory = factory;
+        _client = factory.CreateClient();
+    }
 
     [Fact]
     public async Task Recording_a_contribution_returns_201_with_the_contribution_and_a_location_pointing_to_the_stokvel()
     {
-        var s = await _client.ArrangeMemberWithCycleAsync();
+        var s = await _client.ArrangeMemberWithCycleAsync(_factory);
 
         var response = await _client.PostContributionAsync(
             s.Stokvel.Id, Guid.NewGuid().ToString(), ApiTestHelpers.ContributionBody(s, 500m));
@@ -31,7 +41,7 @@ public class ContributionsApiTests : IClassFixture<WebApplicationFactory<Program
     [Fact]
     public async Task Recording_a_contribution_with_an_amount_of_zero_returns_400()
     {
-        var s = await _client.ArrangeMemberWithCycleAsync();
+        var s = await _client.ArrangeMemberWithCycleAsync(_factory);
 
         var response = await _client.PostContributionAsync(
             s.Stokvel.Id, Guid.NewGuid().ToString(), ApiTestHelpers.ContributionBody(s, 0m));
@@ -42,7 +52,7 @@ public class ContributionsApiTests : IClassFixture<WebApplicationFactory<Program
     [Fact]
     public async Task Recording_a_contribution_with_an_empty_user_id_returns_400()
     {
-        var s = await _client.ArrangeMemberWithCycleAsync();
+        var s = await _client.ArrangeMemberWithCycleAsync(_factory);
 
         var response = await _client.PostContributionAsync(
             s.Stokvel.Id, Guid.NewGuid().ToString(),
@@ -54,7 +64,7 @@ public class ContributionsApiTests : IClassFixture<WebApplicationFactory<Program
     [Fact]
     public async Task Recording_a_contribution_without_an_idempotency_key_returns_422()
     {
-        var s = await _client.ArrangeMemberWithCycleAsync();
+        var s = await _client.ArrangeMemberWithCycleAsync(_factory);
 
         var response = await _client.PostContributionAsync(
             s.Stokvel.Id, key: null, ApiTestHelpers.ContributionBody(s));
@@ -65,7 +75,7 @@ public class ContributionsApiTests : IClassFixture<WebApplicationFactory<Program
     [Fact]
     public async Task Recording_a_contribution_for_a_stokvel_that_does_not_exist_returns_404()
     {
-        var s = await _client.ArrangeMemberWithCycleAsync();
+        var s = await _client.ArrangeMemberWithCycleAsync(_factory);
 
         var response = await _client.PostContributionAsync(
             Guid.NewGuid(), Guid.NewGuid().ToString(), ApiTestHelpers.ContributionBody(s));
@@ -76,7 +86,7 @@ public class ContributionsApiTests : IClassFixture<WebApplicationFactory<Program
     [Fact]
     public async Task A_user_who_is_not_a_member_of_the_stokvel_cannot_contribute_and_gets_404()
     {
-        var s = await _client.ArrangeMemberWithCycleAsync();
+        var s = await _client.ArrangeMemberWithCycleAsync(_factory);
         var outsider = await _client.CreateUserAsync("Outsider");
 
         var response = await _client.PostContributionAsync(
@@ -89,7 +99,7 @@ public class ContributionsApiTests : IClassFixture<WebApplicationFactory<Program
     [Fact]
     public async Task Contributing_to_a_cycle_that_does_not_exist_returns_404()
     {
-        var s = await _client.ArrangeMemberWithCycleAsync();
+        var s = await _client.ArrangeMemberWithCycleAsync(_factory);
 
         var response = await _client.PostContributionAsync(
             s.Stokvel.Id, Guid.NewGuid().ToString(),
@@ -101,7 +111,7 @@ public class ContributionsApiTests : IClassFixture<WebApplicationFactory<Program
     [Fact]
     public async Task A_member_who_already_paid_a_cycle_cannot_pay_it_again_with_a_new_key_and_gets_409()
     {
-        var s = await _client.ArrangeMemberWithCycleAsync();
+        var s = await _client.ArrangeMemberWithCycleAsync(_factory);
         var body = ApiTestHelpers.ContributionBody(s);
         var first = await _client.PostContributionAsync(s.Stokvel.Id, Guid.NewGuid().ToString(), body);
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
@@ -111,3 +121,6 @@ public class ContributionsApiTests : IClassFixture<WebApplicationFactory<Program
         second.AssertProblem(HttpStatusCode.Conflict);
     }
 }
+
+
+

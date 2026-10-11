@@ -1,7 +1,9 @@
+using RondiTrack.Models.Dtos;
+using RondiTrack.Models;
 // Data/InMemoryContributionCycleStore.cs
 namespace RondiTrack.Data;
 
-using RondiTrack.Models;
+using RondiTrack.Domain;
 
 public class InMemoryContributionCycleStore : IContributionCycleStore
 {
@@ -31,3 +33,4 @@ public class InMemoryContributionCycleStore : IContributionCycleStore
     }
         public Task<ContributionCycle?> GetByIdReadOnlyAsync(Guid id) => GetByIdAsync(id);
 }
+
