@@ -59,8 +59,9 @@ public static class VolumeSeeder
             for (int i = existingMemberCount; i < contributionCount; i++)
             {
                 var user = new User(
-                    $"Volume Member {i + 1}",
-                    $"VOLUME-{i + 1:D6}");
+    $"Volume Member {i + 1}",
+    $"VOLUME-{i + 1:D6}",
+    $"volume-member-{i + 1}@example.com");
 
                 db.Users.Add(user);
 

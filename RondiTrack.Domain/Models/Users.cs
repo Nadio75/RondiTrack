@@ -14,17 +14,29 @@ public class User
     // This is what "the entity protects its own state" means in practice.
     public string Name { get; private set; }
 
-    public string ContactNumber { get; private set; }
-        public ICollection<StokvelMember> Memberships { get; private set; } = new List<StokvelMember>();
+  public string ContactNumber { get; private set; }
 
+public string Email { get; private set; }
+
+public ICollection<StokvelMember> Memberships { get; private set; } = new List<StokvelMember>();
+
+public string PasswordHash { get; private set; } = string.Empty;
+public void SetPasswordHash(string passwordHash)
+{
+    if (string.IsNullOrWhiteSpace(passwordHash))
+        throw new ArgumentException(
+            "Password hash cannot be empty.",
+            nameof(passwordHash));
+
+    PasswordHash = passwordHash;
+}
     private User() { } // EF Core materializes instances via this, writing straight to the backing fields
 
     // Constructor: this runs every time a new User is created.
     // We put our validation HERE instead of in the controller because this
     // way, it is IMPOSSIBLE to create a User object that breaks these rules —
     // not just "checked for" somewhere else that a developer might forget to call.
-    public User(string name, string contactNumber)
-    {
+public User(string name, string contactNumber, string email)    {
         // string.IsNullOrWhiteSpace catches null, empty string, AND strings
         // that are just spaces — all three would be "no real name" in practice.
         if (string.IsNullOrWhiteSpace(name))
@@ -38,14 +50,19 @@ public class User
         {
             throw new ArgumentException("A user must have a contact number.", nameof(contactNumber));
         }
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new ArgumentException("A user must have an email address.", nameof(email));
+        }
 
         // Only after both checks pass do we actually assign the fields.
         // If either check above had failed, we'd never reach these lines —
         // so there's no way to end up with a half-valid User.
-        Id = Guid.NewGuid();       // generate a fresh unique ID right now
+        Id = Guid.NewGuid();
         Name = name;
         ContactNumber = contactNumber;
-    }
+        Email = email.Trim().ToLowerInvariant();
+}
 
     /* A controlled way to change the name later, instead of letting
      outside code set User.Name directly. This means every single place

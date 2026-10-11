@@ -88,7 +88,7 @@ public class UsersController : ControllerBase
         User user;
         try
         {
-            user = new User(request.Name, request.ContactNumber);
+            user = new User(request.Name, request.ContactNumber, $"legacy-{Guid.NewGuid():N}@users.ronditrack.invalid");
         }
         catch (ArgumentException ex)
         {
@@ -165,4 +165,3 @@ public class UsersController : ControllerBase
         return NoContent();
     }
 }
-

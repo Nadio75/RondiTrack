@@ -12,6 +12,7 @@ public interface IStokvelStore
     Task<IEnumerable<User>> GetAllUsersAsync();
     Task<User?> GetUserByIdAsync(Guid id);
     Task AddUserAsync(User user);
+    Task<User?> GetUserByEmailAsync(string normalizedEmail);
     Task<bool> DeleteUserAsync(Guid id);
 
     Task<IEnumerable<Stokvel>> GetAllStokvelsAsync();

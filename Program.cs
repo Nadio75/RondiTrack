@@ -6,6 +6,15 @@ using RondiTrack.Data;
 using RondiTrack.Services;
 using RondiTrack.Validation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using RondiTrack.Authorization;
+using System.Text;
+
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +22,89 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+// JWT authentication: validate signature, issuer, audience and lifetime.
+var jwtIssuer = builder.Configuration["Jwt:Issuer"]
+    ?? throw new InvalidOperationException(
+        "Missing required configuration: Jwt:Issuer.");
+
+var jwtAudience = builder.Configuration["Jwt:Audience"]
+    ?? throw new InvalidOperationException(
+        "Missing required configuration: Jwt:Audience.");
+
+var jwtSigningKey = builder.Configuration["Jwt:SigningKey"]
+    ?? throw new InvalidOperationException(
+        "Missing required configuration: Jwt:SigningKey.");
+
+byte[] jwtKeyBytes;
+
+try
+{
+    jwtKeyBytes = Convert.FromBase64String(jwtSigningKey);
+}
+catch (FormatException exception)
+{
+    throw new InvalidOperationException(
+        "Jwt:SigningKey must be valid Base64.",
+        exception);
+}
+
+if (jwtKeyBytes.Length < 32)
+{
+    throw new InvalidOperationException(
+        "Jwt:SigningKey must decode to at least 32 bytes.");
+}
+
+builder.Services.AddSingleton<JwtTokenService>();
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtIssuer,
+
+            ValidateAudience = true,
+            ValidAudience = jwtAudience,
+
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(jwtKeyBytes),
+
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+        options.Events = new JwtBearerEvents
+{
+    OnChallenge = async context =>
+    {
+        context.HandleResponse();
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        context.Response.ContentType = "application/problem+json";
+
+        await context.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Status = 401,
+            Title = "Authentication required",
+            Detail = "Valid authentication credentials are required."
+        });
+    },
+
+    OnForbidden = async context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        context.Response.ContentType = "application/problem+json";
+
+        await context.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Status = 403,
+            Title = "Forbidden",
+            Detail = "You are not authorized to perform this operation."
+        });
+    }
+};
+        ;
+    });
 
 // Our in-memory data stores, each shared as a single instance for the app's lifetime.
 builder.Services.AddScoped<IStokvelStore, EfStokvelStore>();
@@ -55,6 +147,39 @@ builder.Services.AddControllers(options =>
 {
     options.Filters.Add<ValidationFilter>();
 });
+builder.Services.AddScoped<PasswordHasher<User>>();
+builder.Services.AddScoped<IAuthorizationHandler, StokvelRoleHandler>();
+builder.Services.AddScoped<IStokvelAccessService, StokvelAccessService>();
+
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy =
+        new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .Build();
+      options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+
+    options.AddPolicy("StokvelMember", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new StokvelRoleRequirement("Member"));
+    });
+
+    options.AddPolicy("StokvelTreasurerOrChairperson", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(
+            new StokvelRoleRequirement("TreasurerOrChairperson"));
+    });
+    options.AddPolicy("StokvelChairperson", policy =>
+{
+    policy.RequireAuthenticatedUser();
+    policy.AddRequirements(new StokvelRoleRequirement("Chairperson"));
+});
+});
+
 
 //builder.Services.AddProblemDetails();
 
@@ -71,16 +196,16 @@ app.UseExceptionHandler();
 if (app.Environment.IsDevelopment())
 {
     // This exposes the raw OpenAPI JSON document at /openapi/v1.json
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
 
     // This maps the actual Scalar UI, which reads that JSON document and
     // renders the interactive browser page. By default it's served at /scalar
-    app.MapScalarApiReference();
+    app.MapScalarApiReference().AllowAnonymous();
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
 app.UseAuthorization();
-
 
 // Wires up all your [ApiController] classes (UsersController, StokvelsController)
 // to their routes.

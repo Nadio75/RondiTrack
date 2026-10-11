@@ -16,9 +16,9 @@ public class InMemoryStokvelStore : IStokvelStore
     // immediately, per the assignment's requirement.
     public InMemoryStokvelStore()
     {
-        var thabo = new User("Thabo Nkosi", "0821234567");
-        var lindiwe = new User("Lindiwe Dlamini", "0837654321");
-        var sipho = new User("Sipho Zulu", "0715551234");
+        var thabo = new User("Thabo Nkosi", "0821234567", "thabonkosi@example.com");
+        var lindiwe = new User("Lindiwe Dlamini", "0837654321", "ldlamini@example.com");
+        var sipho = new User("Sipho Zulu", "0715551234", "siphozulu@example.com");
 
         _users.Add(thabo);
         _users.Add(lindiwe);
@@ -48,6 +48,13 @@ public class InMemoryStokvelStore : IStokvelStore
         var user = _users.FirstOrDefault(u => u.Id == id);
         return Task.FromResult(user);
     }
+public Task<User?> GetUserByEmailAsync(string normalizedEmail)
+{
+    var user = _users.FirstOrDefault(
+        u => u.Email == normalizedEmail);
+
+    return Task.FromResult(user);
+}
 
     public Task AddUserAsync(User user)
     {

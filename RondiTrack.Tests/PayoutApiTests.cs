@@ -18,8 +18,7 @@ using Microsoft.AspNetCore.Mvc;
 [Collection("Postgres collection")]
 public class PayoutApiTests
 {
-    private readonly WebApplicationFactory<Program> _factory;
-    private readonly HttpClient _client;
+private readonly PostgresApiFactory _factory;    private readonly HttpClient _client;
 
     public PayoutApiTests(PostgresApiFactory factory)
     {
@@ -30,7 +29,7 @@ public class PayoutApiTests
     [Fact]
     public async Task Processing_a_payout_returns_201_records_a_payout_and_marks_the_cycle_paid_out()
     {
-        var s = await _client.ArrangeMemberWithCycleAsync();
+        var s = await _client.ArrangeMemberWithCycleAsync(_factory);
 
         var response = await _client.PostAsync($"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout", null);
 
@@ -48,7 +47,7 @@ public class PayoutApiTests
     [Fact]
     public async Task Processing_a_payout_twice_for_the_same_cycle_is_rejected_the_second_time()
     {
-        var s = await _client.ArrangeMemberWithCycleAsync();
+        var s = await _client.ArrangeMemberWithCycleAsync(_factory);
         var first = await _client.PostAsync($"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout", null);
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
 
@@ -64,7 +63,7 @@ public class PayoutApiTests
     [Fact]
     public async Task A_failed_payout_leaves_no_partial_payout_or_cycle_status_change_behind()
     {
-        var s = await _client.ArrangeMemberWithCycleAsync(); // one member, one cycle
+        var s = await _client.ArrangeMemberWithCycleAsync(_factory); // one member, one cycle
         var firstPayout = await _client.PostAsync($"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout", null);
         Assert.Equal(HttpStatusCode.Created, firstPayout.StatusCode); // the one member is now paid
 
@@ -94,7 +93,7 @@ public class PayoutApiTests
     [Fact]
 public async Task Updating_payout_with_stale_version_returns_409()
 {
-    var s = await _client.ArrangeMemberWithCycleAsync();
+    var s = await _client.ArrangeMemberWithCycleAsync(_factory);
 
     // Create the payout.
     var createResponse = await _client.PostAsync(

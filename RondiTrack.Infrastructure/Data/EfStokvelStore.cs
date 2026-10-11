@@ -14,6 +14,9 @@ public class EfStokvelStore : IStokvelStore
 
     public async Task<User?> GetUserByIdAsync(Guid id) =>
         await _db.Users.FindAsync(id);
+public async Task<User?> GetUserByEmailAsync(string normalizedEmail) =>
+    await _db.Users.FirstOrDefaultAsync(
+        u => u.Email == normalizedEmail);
 
     public async Task AddUserAsync(User user)
     {

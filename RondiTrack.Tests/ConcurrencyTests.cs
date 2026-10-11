@@ -1,60 +1,60 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using RondiTrack.Infrastructure;
+using RondiTrack.Tests.TestSupport;
+
 namespace RondiTrack.Tests;
 
-using Microsoft.EntityFrameworkCore;
-using RondiTrack.Data;
-using Xunit;
-
+[Collection("Postgres collection")]
 public class ConcurrencyTests
 {
-    private static RondiTrackDbContext CreateContext()
-    {
-        var options = new DbContextOptionsBuilder<RondiTrackDbContext>()
-            .UseNpgsql("Host=localhost;Port=5432;Database=RondiTrackDb;Username=postgres;Password=bitcube")
-            .Options;
+    private readonly PostgresApiFactory _factory;
 
-        return new RondiTrackDbContext(options);
+    public ConcurrencyTests(PostgresApiFactory factory)
+    {
+        _factory = factory;
     }
 
     [Fact]
     public async Task Concurrent_Updates_Throw_DbUpdateConcurrencyException()
     {
-        // Arrange – use an existing payout so we do not violate
-        // the database rule that allows only one payout per cycle.
-        Guid payoutId;
+        using var scope = _factory.Services.CreateScope();
 
-        using (var setup = CreateContext())
-        {
-            var payout = await setup.Payouts.FirstOrDefaultAsync();
+        var options = scope.ServiceProvider
+            .GetRequiredService<DbContextOptions<RondiTrackDbContext>>();
 
-            Assert.NotNull(payout);
+        // Set up a test-owned stokvel.
+        await using var setup = new RondiTrackDbContext(options);
 
-            payoutId = payout!.Id;
-        }
+        var stokvel = new RondiTrack.Domain.Stokvel(
+            "Concurrency Test " + Guid.NewGuid(),
+            500m);
 
-        // Two independent DbContexts represent two separate requests.
-        using var ctxA = CreateContext();
-        using var ctxB = CreateContext();
+        setup.Stokvels.Add(stokvel);
+        await setup.SaveChangesAsync();
 
-        var payoutA = await ctxA.Payouts.FindAsync(payoutId);
-        var payoutB = await ctxB.Payouts.FindAsync(payoutId);
+        // Two independent contexts load the same row.
+        await using var ctxA = new RondiTrackDbContext(options);
+        await using var ctxB = new RondiTrackDbContext(options);
 
-        Assert.NotNull(payoutA);
-        Assert.NotNull(payoutB);
+        var stokvelA = await ctxA.Stokvels.FindAsync(stokvel.Id);
+        var stokvelB = await ctxB.Stokvels.FindAsync(stokvel.Id);
 
-        // Context A wins.
-        ctxA.Entry(payoutA!)
-            .Property("Amount")
+        Assert.NotNull(stokvelA);
+        Assert.NotNull(stokvelB);
+
+        // First context saves a real change.
+        ctxA.Entry(stokvelA!)
+            .Property("ContributionAmount")
             .CurrentValue = 600m;
 
         await ctxA.SaveChangesAsync();
 
-        // Context B still has the old xmin value.
-        ctxB.Entry(payoutB!)
-            .Property("Amount")
+        // Second context still holds the old xmin value.
+        ctxB.Entry(stokvelB!)
+            .Property("ContributionAmount")
             .CurrentValue = 700m;
 
-        // PostgreSQL xmin should detect that the row has changed.
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(
             () => ctxB.SaveChangesAsync());
     }

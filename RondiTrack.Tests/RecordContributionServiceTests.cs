@@ -26,7 +26,7 @@ public class RecordContributionServiceTests
     // A stokvel with one member and one cycle: everything a valid contribution needs.
     private async Task<Scenario> ArrangeMemberWithCycleAsync()
     {
-        var user = new User("Test Member", "0800000000");
+        var user = new User("Test Member", "0800000000", "Test Member@example.com");
         await _stokvels.AddUserAsync(user);
 
         var stokvel = new Stokvel("Test Stokvel", 500m);
@@ -65,7 +65,7 @@ public class RecordContributionServiceTests
     public async Task A_user_who_is_not_a_member_of_the_stokvel_cannot_contribute()
     {
         var s = await ArrangeMemberWithCycleAsync();
-        var outsider = new User("Not A Member", "0811111111");
+        var outsider = new User("Not A Member", "0811111111", "Not A Member@example.com");
         await _stokvels.AddUserAsync(outsider);
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
@@ -150,7 +150,7 @@ public class RecordContributionServiceTests
     public async Task Two_members_can_each_pay_the_same_cycle()
     {
         var s = await ArrangeMemberWithCycleAsync();
-        var second = new User("Second Member", "0822222222");
+        var second = new User("Second Member", "0822222222", "Second Member@example.com");
         await _stokvels.AddUserAsync(second);
         s.Stokvel.AddMember(second.Id);
 
@@ -224,7 +224,7 @@ public class RecordContributionServiceTests
     public async Task A_failed_request_is_not_remembered_so_the_same_key_can_be_retried()
     {
         // The user exists but is not yet a member, so the first attempt fails with NotFound.
-        var user = new User("Late Joiner", "0833333333");
+        var user = new User("Late Joiner", "0833333333", "Late Joiner@example.com");
         await _stokvels.AddUserAsync(user);
         var stokvel = new Stokvel("Test Stokvel", 500m);
         await _stokvels.AddStokvelAsync(stokvel);

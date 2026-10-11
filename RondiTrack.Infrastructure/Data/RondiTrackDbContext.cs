@@ -13,6 +13,7 @@ public class RondiTrackDbContext : DbContext
     public DbSet<ContributionCycle> ContributionCycles => Set<ContributionCycle>();
     public DbSet<Contribution> Contributions => Set<Contribution>();
     public DbSet<Payout> Payouts => Set<Payout>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -53,12 +54,28 @@ public class RondiTrackDbContext : DbContext
         });
 
         modelBuilder.Entity<User>(b =>
-        {
-            b.HasKey(u => u.Id);
-            b.Property(u => u.Id);
-            b.Property(u => u.Name).IsRequired().HasMaxLength(100);
-            b.Property(u => u.ContactNumber).IsRequired();
-        });
+{
+    b.HasKey(u => u.Id);
+
+    b.Property(u => u.Id);
+
+    b.Property(u => u.Name)
+        .IsRequired()
+        .HasMaxLength(100);
+
+    b.Property(u => u.ContactNumber)
+        .IsRequired();
+
+    b.Property(u => u.Email)
+        .IsRequired()
+        .HasMaxLength(320);
+
+    b.Property(u => u.PasswordHash)
+        .IsRequired();
+
+    b.HasIndex(u => u.Email)
+        .IsUnique();
+});
 
         modelBuilder.Entity<Contribution>(b =>
         {
@@ -124,6 +141,27 @@ public class RondiTrackDbContext : DbContext
                 .HasPrincipalKey(m => new { m.UserId, m.StokvelId });
                 
         });
+        modelBuilder.Entity<RefreshToken>(b =>
+{
+    b.HasKey(t => t.Id);
+
+    b.Property(t => t.TokenHash)
+        .IsRequired()
+        .HasMaxLength(64);
+
+    b.HasIndex(t => t.TokenHash)
+        .IsUnique();
+
+    b.HasIndex(t => t.FamilyId);
+
+    b.Property(t => t.CreatedAtUtc).IsRequired();
+    b.Property(t => t.ExpiresAtUtc).IsRequired();
+
+    b.HasOne<User>()
+        .WithMany()
+        .HasForeignKey(t => t.UserId)
+        .OnDelete(DeleteBehavior.Cascade);
+    });
         
     }
 }

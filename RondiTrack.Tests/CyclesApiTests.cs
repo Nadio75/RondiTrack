@@ -1,7 +1,9 @@
+
 using RondiTrack.Models.Dtos;
 using RondiTrack.Infrastructure;
 using RondiTrack.Domain;
 using RondiTrack.Tests.TestSupport;
+
 namespace RondiTrack.Tests;
 
 using System.Net;
@@ -13,8 +15,13 @@ using RondiTrack.Models;
 public class CyclesApiTests
 {
     private readonly HttpClient _client;
+    private readonly PostgresApiFactory _factory;
 
-    public CyclesApiTests(PostgresApiFactory factory) => _client = factory.CreateClient();
+    public CyclesApiTests(PostgresApiFactory factory)
+    {
+        _factory = factory;
+        _client = factory.CreateClient();
+    }
 
     // ---------- Happy paths ----------
 
@@ -23,29 +30,51 @@ public class CyclesApiTests
     {
         var stokvel = await _client.CreateStokvelAsync();
 
-        var response = await _client.PostAsJsonAsync($"/api/stokvels/{stokvel.Id}/cycles",
+        await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/stokvels/{stokvel.Id}/cycles",
             new { period = "2026-09", targetAmount = 1000 });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
         var created = await response.Content.ReadFromJsonAsync<ContributionCycleResponse>();
+
         Assert.Equal(stokvel.Id, created!.StokvelId);
         Assert.Equal("2026-09", created.Period);
-        Assert.EndsWith($"/api/stokvels/{stokvel.Id}/cycles/{created.Id}", response.Headers.Location!.ToString());
+        Assert.EndsWith(
+            $"/api/stokvels/{stokvel.Id}/cycles/{created.Id}",
+            response.Headers.Location!.ToString());
 
         var fetched = await _client.GetFromJsonAsync<ContributionCycleResponse>(
             $"/api/stokvels/{stokvel.Id}/cycles/{created.Id}");
+
         Assert.Equal(created.Id, fetched!.Id);
         Assert.Equal(created.StokvelId, fetched.StokvelId);
         Assert.Equal(created.Period, fetched.Period);
-        Assert.True(created.TargetAmount == fetched.TargetAmount, $"Expected {created.TargetAmount}, got {fetched.TargetAmount}");
-Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMilliseconds(1),
-    $"Expected {created.CreatedAt}, got {fetched.CreatedAt}");    }
+
+        Assert.True(
+            created.TargetAmount == fetched.TargetAmount,
+            $"Expected {created.TargetAmount}, got {fetched.TargetAmount}");
+
+        Assert.True(
+            (created.CreatedAt - fetched.CreatedAt).Duration()
+                < TimeSpan.FromMilliseconds(1),
+            $"Expected {created.CreatedAt}, got {fetched.CreatedAt}");
+    }
 
     [Fact]
     public async Task Listing_cycles_returns_only_that_stokvels_cycles()
     {
         var stokvel = await _client.CreateStokvelAsync();
         var other = await _client.CreateStokvelAsync();
+
+        var chairperson = await _client.ArrangeChairpersonAsync(
+            _factory, stokvel.Id);
+
+        await _factory.EnsureMembershipAsync(
+            other.Id, chairperson.Id, "Chairperson");
+
         var mine = await _client.CreateCycleAsync(stokvel.Id, "2026-09");
         await _client.CreateCycleAsync(other.Id, "2026-09");
 
@@ -60,13 +89,19 @@ Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMi
     public async Task Updating_a_cycle_replaces_period_and_target_amount()
     {
         var stokvel = await _client.CreateStokvelAsync();
+
+        await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
         var cycle = await _client.CreateCycleAsync(stokvel.Id);
 
-        var response = await _client.PutAsJsonAsync($"/api/stokvels/{stokvel.Id}/cycles/{cycle.Id}",
+        var response = await _client.PutAsJsonAsync(
+            $"/api/stokvels/{stokvel.Id}/cycles/{cycle.Id}",
             new { period = "2026-10", targetAmount = 1200 });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
         var updated = await response.Content.ReadFromJsonAsync<ContributionCycleResponse>();
+
         Assert.Equal(cycle.Id, updated!.Id);
         Assert.Equal("2026-10", updated.Period);
         Assert.Equal(1200m, updated.TargetAmount);
@@ -76,10 +111,16 @@ Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMi
     public async Task Deleting_a_cycle_returns_204_then_404_on_a_second_delete()
     {
         var stokvel = await _client.CreateStokvelAsync();
+
+        await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
         var cycle = await _client.CreateCycleAsync(stokvel.Id);
 
-        var first = await _client.DeleteAsync($"/api/stokvels/{stokvel.Id}/cycles/{cycle.Id}");
-        var second = await _client.DeleteAsync($"/api/stokvels/{stokvel.Id}/cycles/{cycle.Id}");
+        var first = await _client.DeleteAsync(
+            $"/api/stokvels/{stokvel.Id}/cycles/{cycle.Id}");
+
+        var second = await _client.DeleteAsync(
+            $"/api/stokvels/{stokvel.Id}/cycles/{cycle.Id}");
 
         Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
         second.AssertProblem(HttpStatusCode.NotFound);
@@ -91,11 +132,15 @@ Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMi
     [InlineData("", 1000)]
     [InlineData("September 2026", 1000)]
     [InlineData("2026-09", 0)]
-    public async Task Creating_a_cycle_that_breaks_a_rule_returns_400(string period, int targetAmount)
+    public async Task Creating_a_cycle_that_breaks_a_rule_returns_400(
+        string period, int targetAmount)
     {
         var stokvel = await _client.CreateStokvelAsync();
 
-        var response = await _client.PostAsJsonAsync($"/api/stokvels/{stokvel.Id}/cycles",
+        await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/stokvels/{stokvel.Id}/cycles",
             new { period, targetAmount });
 
         response.AssertProblem(HttpStatusCode.BadRequest);
@@ -104,7 +149,8 @@ Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMi
     [Fact]
     public async Task Creating_a_cycle_for_a_stokvel_that_does_not_exist_returns_404()
     {
-        var response = await _client.PostAsJsonAsync($"/api/stokvels/{Guid.NewGuid()}/cycles",
+        var response = await _client.PostAsJsonAsync(
+            $"/api/stokvels/{Guid.NewGuid()}/cycles",
             new { period = "2026-09", targetAmount = 1000 });
 
         response.AssertProblem(HttpStatusCode.NotFound);
@@ -113,7 +159,8 @@ Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMi
     [Fact]
     public async Task Listing_cycles_for_a_stokvel_that_does_not_exist_returns_404()
     {
-        var response = await _client.GetAsync($"/api/stokvels/{Guid.NewGuid()}/cycles");
+        var response = await _client.GetAsync(
+            $"/api/stokvels/{Guid.NewGuid()}/cycles");
 
         response.AssertProblem(HttpStatusCode.NotFound);
     }
@@ -123,7 +170,10 @@ Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMi
     {
         var stokvel = await _client.CreateStokvelAsync();
 
-        var response = await _client.GetAsync($"/api/stokvels/{stokvel.Id}/cycles/{Guid.NewGuid()}");
+        await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
+        var response = await _client.GetAsync(
+            $"/api/stokvels/{stokvel.Id}/cycles/{Guid.NewGuid()}");
 
         response.AssertProblem(HttpStatusCode.NotFound);
     }
@@ -132,9 +182,13 @@ Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMi
     public async Task Creating_a_second_cycle_for_the_same_period_returns_409()
     {
         var stokvel = await _client.CreateStokvelAsync();
+
+        await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
         await _client.CreateCycleAsync(stokvel.Id, "2026-09");
 
-        var response = await _client.PostAsJsonAsync($"/api/stokvels/{stokvel.Id}/cycles",
+        var response = await _client.PostAsJsonAsync(
+            $"/api/stokvels/{stokvel.Id}/cycles",
             new { period = "2026-09", targetAmount = 2000 });
 
         response.AssertProblem(HttpStatusCode.Conflict);
@@ -145,18 +199,28 @@ Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMi
     {
         var first = await _client.CreateStokvelAsync();
         var second = await _client.CreateStokvelAsync();
+
+        var chairperson = await _client.ArrangeChairpersonAsync(
+            _factory, first.Id);
+
+        await _factory.EnsureMembershipAsync(
+            second.Id, chairperson.Id, "Chairperson");
+
         await _client.CreateCycleAsync(first.Id, "2026-09");
 
-        var response = await _client.PostAsJsonAsync($"/api/stokvels/{second.Id}/cycles",
+        var response = await _client.PostAsJsonAsync(
+            $"/api/stokvels/{second.Id}/cycles",
             new { period = "2026-09", targetAmount = 1000 });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
-        [Fact]
+    [Fact]
     public async Task Updating_a_cycle_with_an_invalid_body_returns_400_even_when_the_cycle_does_not_exist()
     {
         var stokvel = await _client.CreateStokvelAsync();
+
+        await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
 
         var response = await _client.PutAsJsonAsync(
             $"/api/stokvels/{stokvel.Id}/cycles/{Guid.NewGuid()}",
@@ -170,6 +234,8 @@ Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMi
     {
         var stokvel = await _client.CreateStokvelAsync();
 
+        await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
         var response = await _client.PutAsJsonAsync(
             $"/api/stokvels/{stokvel.Id}/cycles/{Guid.NewGuid()}",
             new { period = "2026-10", targetAmount = 1200 });
@@ -177,6 +243,3 @@ Assert.True((created.CreatedAt - fetched.CreatedAt).Duration() < TimeSpan.FromMi
         response.AssertProblem(HttpStatusCode.NotFound);
     }
 }
-
-
-
