@@ -1513,3 +1513,290 @@ The implementation separates user identity from stokvel permissions so that one 
 The latest complete test run passed all 106 existing tests.
 
 The remaining work is to verify the assignment's dedicated security scenarios and document the exact implementation choices before final submission.
+
+# Assignment 6.2 — Observability & POPIA-Compliant Telemetry
+
+## 1. Assignment Overview
+
+Assignment 6.2 focuses on making RondiTrack easier to monitor, troubleshoot and operate safely.
+
+Previously, the API could process requests and return errors, but it was difficult to follow an individual request through the application, identify database activity associated with that request, or measure important business operations.
+
+The assignment introduces **observability**, which means understanding what an application is doing by examining traces, metrics and logs.
+
+It also requires that observability does not compromise the privacy of RondiTrack users.
+
+### Main objectives
+
+- Introduce OpenTelemetry tracing, metrics and logging.
+- Connect HTTP requests to database operations through distributed traces.
+- Return consistent correlation IDs in API errors.
+- Trace payout processing as a business operation.
+- Count successful and failed business operations using metrics.
+- Avoid logging sensitive personal and financial information.
+- Introduce health endpoints suitable for deployment monitoring.
+- Verify the behaviour through automated tests.
+
+## 2. OpenTelemetry Configuration
+
+OpenTelemetry is a standard way to collect information about an application's behaviour.
+
+RondiTrack identifies itself using the service name:
+
+`ronditrack-api`
+
+This name helps distinguish RondiTrack telemetry from other services in an observability dashboard.
+
+The configuration is registered in `Program.cs`.
+
+### Traces
+
+A trace describes the path taken by a request through the application.
+
+For example, a request to record a contribution may involve:
+
+1. Receiving the HTTP request.
+2. Checking authentication and stokvel permissions.
+3. Reading or writing data in PostgreSQL.
+4. Returning an HTTP response.
+
+Each operation can appear as a span within the same trace.
+
+RondiTrack instruments incoming ASP.NET Core requests and Npgsql database activity.
+
+Health endpoints are excluded from HTTP tracing to reduce unnecessary telemetry from repeated monitoring requests.
+
+### Exporting telemetry
+
+OpenTelemetry Protocol (OTLP) can be used to send telemetry to a compatible collector or dashboard.
+
+The exporter is configured conditionally, based on whether an OTLP endpoint is supplied through the environment.
+
+This means the application does not require a running observability dashboard during ordinary automated tests.
+
+For local development, configure an OTLP endpoint using the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable.
+
+Do not place passwords, JWT signing keys or other secrets in the README.
+
+## 3. Correlation IDs and Problem Details
+
+A correlation ID connects an API error response to the trace and relevant application logs.
+
+RondiTrack uses the current activity trace ID when available.
+
+This allows a developer to investigate an error by searching for the same trace ID in telemetry.
+
+Correlation IDs are included in Problem Details responses, including:
+
+- Exceptions handled by the centralized exception handler.
+- JWT authentication failures returning HTTP 401.
+- Authorization failures returning HTTP 403.
+- Controller-generated Problem Details responses.
+
+The API also supports the W3C `traceparent` request header.
+
+When a valid incoming trace context is supplied, the API preserves the associated trace ID rather than creating an unrelated one.
+
+This is important when a request travels through multiple services.
+
+## 4. Payout Tracing
+
+Payout processing is an important financial operation in RondiTrack.
+
+A custom `ActivitySource` named `RondiTrack.Payouts` is used to create a business-level span called:
+
+`payout.process`
+
+The payout span helps show where payout processing happens within a larger HTTP request.
+
+When database operations are traced, their spans can appear beneath the relevant payout activity.
+
+The payout activity records bounded operational information, such as whether processing succeeded or failed.
+
+Sensitive information, such as payout amounts and personal identifiers, must not be added as telemetry tags.
+
+## 5. Application Metrics
+
+Metrics are numerical measurements that help show what the application is doing over time.
+
+RondiTrack defines a custom meter named:
+
+`RondiTrack`
+
+It tracks important operations, including:
+
+- Recorded contributions.
+- Payout processing outcomes.
+- Authorization refusals.
+
+These measurements can help answer questions such as:
+
+- How many contributions have been recorded?
+- How many payout attempts succeeded or failed?
+- How frequently are requests refused by authorization checks?
+
+### Metric cardinality
+
+Metric labels must have a limited number of possible values.
+
+For example, labels such as `success`, `failure`, `forbidden` and `not_found` have a predictable number of values.
+
+By contrast, user IDs, stokvel IDs, emails and idempotency keys could create enormous numbers of unique metric combinations.
+
+RondiTrack therefore uses bounded outcome labels rather than personal or transaction-specific identifiers.
+
+## 6. POPIA-Conscious Logging
+
+POPIA, the Protection of Personal Information Act, requires careful handling of personal information.
+
+Operational logging should help diagnose problems without unnecessarily collecting users' private data.
+
+The logging review covers registration, login, refresh-token operations and contribution recording.
+
+Sensitive information that should not appear in application logs includes:
+
+- Plaintext passwords.
+- Email addresses.
+- JWT access tokens.
+- Refresh-token values.
+- Idempotency keys.
+- Financial amounts.
+- Personal and transaction identifiers.
+
+The centralized exception handler records limited information for expected client errors.
+
+For errors below HTTP 500, it logs operational information such as the status code, exception type and correlation ID at Information level.
+
+Unexpected server failures are logged at Error level for investigation.
+
+An expected HTTP 409 conflict is not treated as an unexpected server failure.
+
+### Database command logging
+
+Routine EF Core database-command logging is configured at Warning level.
+
+This avoids unnecessary duplication between ordinary SQL log messages and Npgsql tracing.
+
+It also reduces the risk of recording sensitive SQL-related information through verbose command logs.
+
+In a production deployment, exception details, SQL tracing and exporter access must still be reviewed to ensure that sensitive data is not exposed.
+
+## 7. Health Checks
+
+RondiTrack exposes two health endpoints.
+
+### `/health/live`
+
+This endpoint answers whether the application process is running and able to respond.
+
+It does not depend on PostgreSQL availability.
+
+This distinction matters because a temporary database outage should not automatically mean that the application process itself needs restarting.
+
+### `/health/ready`
+
+This endpoint checks whether the application can connect to PostgreSQL.
+
+It has a bounded timeout to prevent an unavailable database from causing the health request to hang indefinitely.
+
+When PostgreSQL is unavailable, the endpoint returns HTTP 503 with an unhealthy result.
+
+Both health endpoints allow anonymous access and return simple health information rather than sensitive diagnostic details.
+
+## 8. Local Observability Dashboard
+
+An OpenTelemetry-compatible collector or dashboard can be used during local development.
+
+A local Aspire dashboard is one option.
+
+The general process is:
+
+1. Start an OTLP-compatible dashboard or collector.
+2. Configure the RondiTrack application with the dashboard's OTLP endpoint.
+3. Run the API.
+4. Send a test request, preferably one that performs a database operation.
+5. Open the dashboard and inspect traces from `ronditrack-api`.
+6. Confirm that HTTP and database spans belong to the same trace.
+7. For a payout request, inspect the `payout.process` span and its nested database spans.
+
+The exact dashboard endpoint, transport and startup command depend on the locally installed dashboard version and configuration.
+
+### Evidence to capture
+
+The assignment's observability evidence should include a screenshot showing a payout trace with the `payout.process` span and related PostgreSQL spans.
+
+The screenshot should not reveal JWTs, database credentials, personal information or financial amounts.
+
+## 9. Automated Tests
+
+The Assignment 6.2 test coverage includes:
+
+- Health endpoint behaviour.
+- PostgreSQL-unavailable readiness checks.
+- Correlation IDs in error responses.
+- Preservation of incoming trace context.
+- Custom metric measurements.
+- Authentication logging privacy checks.
+- Contribution logging privacy checks.
+
+The POPIA tests use temporary test data and inspect captured log messages for specific sensitive values.
+
+These tests provide evidence that the tested workflows do not log those values. They are not a guarantee that every possible logging or telemetry path is free from sensitive information.
+
+### Latest verified result
+
+**137 tests passed, 0 failed, 0 skipped.**
+
+Run the full suite with:
+
+```powershell
+dotnet test .\RondiTrack.Tests\RondiTrack.Tests.csproj --logger "console;verbosity=quiet"
+```
+
+The tests use Docker-backed PostgreSQL containers where required.
+
+## 10. Design Decisions and Trade-offs
+
+### Why exclude health checks from traces?
+
+Health checks are called repeatedly by monitoring systems. Tracing every check creates noise without necessarily helping diagnose business requests.
+
+### Why use correlation IDs?
+
+A correlation ID makes it easier to connect a user-facing error to the trace and logs associated with that request.
+
+### Why trace payouts separately?
+
+A business-level payout span makes an important financial workflow visible instead of showing only generic HTTP and SQL operations.
+
+### Why avoid identifiers in metric labels?
+
+Identifiers create high-cardinality metrics, increase storage and processing costs, and may expose sensitive information.
+
+### Why keep database command logging at Warning?
+
+Routine SQL messages may duplicate trace data and increase the risk of sensitive information appearing in logs.
+
+### Why separate liveness and readiness?
+
+An application can be running while its database is unavailable. These are different operational conditions and should be monitored separately.
+
+## 11. Remaining Verification
+
+The automated test suite is passing.
+
+The following should still be verified before the assignment is considered fully complete:
+
+- Run the API with a local OTLP-compatible dashboard.
+- Capture a real payout trace with nested PostgreSQL spans.
+- Confirm telemetry export works with the chosen local dashboard.
+- Review exported trace attributes and exception details for sensitive information.
+- Save suitable evidence screenshots for submission.
+
+## 12. Conclusion
+
+Assignment 6.2 adds an observability foundation to RondiTrack.
+
+The application now has distributed tracing, custom business spans, operational metrics, correlation-aware errors, privacy-conscious logging checks and separate liveness and readiness endpoints.
+
+Together, these features make the API easier to troubleshoot and monitor while reducing unnecessary exposure of sensitive information.

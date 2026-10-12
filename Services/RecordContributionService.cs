@@ -1,13 +1,14 @@
-using RondiTrack.Models.Dtos;
-using RondiTrack.Models;
-// Services/RecordContributionService.cs
-namespace RondiTrack.Services;
 
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using RondiTrack.Domain;
 using RondiTrack.Mapping;
+using RondiTrack.Models;
+using RondiTrack.Models.Dtos;
+using RondiTrack.Telemetry;
+
+namespace RondiTrack.Services;
 
 public class RecordContributionService
 {
@@ -29,42 +30,80 @@ public class RecordContributionService
     }
 
     public async Task<ContributionResponse> ExecuteAsync(
-        Guid stokvelId, string idempotencyKey, ContributionRequest request)
+        Guid stokvelId,
+        string idempotencyKey,
+        ContributionRequest request)
     {
         var requestHash = Hash(request);
 
-        var existing = await _idempotencyStore.FindAsync(idempotencyKey);
+        var existing = await _idempotencyStore.FindAsync(
+            idempotencyKey);
+
         if (existing is not null)
         {
             if (existing.RequestHash != requestHash)
+            {
                 throw new IdempotencyConflictException(
                     "This Idempotency-Key was already used with a different request.");
+            }
 
-            return JsonSerializer.Deserialize<ContributionResponse>(existing.ResponseBodyJson)!;
+            // This is a replay, not a newly recorded contribution.
+            // Do not increment the counter.
+            return JsonSerializer.Deserialize<ContributionResponse>(
+                existing.ResponseBodyJson)!;
         }
 
-        var stokvel = await _stokvelStore.GetStokvelByIdAsync(stokvelId);
-        if (stokvel is null) throw new NotFoundException("Stokvel not found.");
+        var stokvel = await _stokvelStore.GetStokvelByIdAsync(
+            stokvelId);
 
-        var user = await _stokvelStore.GetUserByIdAsync(request.UserId);
-        if (user is null) throw new NotFoundException("User not found.");
+        if (stokvel is null)
+        {
+            throw new NotFoundException("Stokvel not found.");
+        }
+
+        var user = await _stokvelStore.GetUserByIdAsync(
+            request.UserId);
+
+        if (user is null)
+        {
+            throw new NotFoundException("User not found.");
+        }
+
         if (!stokvel.MemberIds.Contains(request.UserId))
-            throw new NotFoundException("This user is not a member of this stokvel.");
+        {
+            throw new NotFoundException(
+                "This user is not a member of this stokvel.");
+        }
 
-        // New check: the cycle being paid into has to actually exist, and has to belong
-        // to THIS stokvel — not just any stokvel's cycle.
-        var cycle = await _cycleStore.GetByIdAsync(request.ContributionCycleId);
+        var cycle = await _cycleStore.GetByIdAsync(
+            request.ContributionCycleId);
+
         if (cycle is null || cycle.StokvelId != stokvelId)
-            throw new NotFoundException("This contribution cycle does not exist for this stokvel.");
+        {
+            throw new NotFoundException(
+                "This contribution cycle does not exist for this stokvel.");
+        }
 
-        var duplicate = await _contributionStore.FindAsync(stokvelId, request.UserId, request.ContributionCycleId);
+        var duplicate = await _contributionStore.FindAsync(
+            stokvelId,
+            request.UserId,
+            request.ContributionCycleId);
+
         if (duplicate is not null)
-            throw new ConflictException("This member has already paid for this cycle.");
+        {
+            throw new ConflictException(
+                "This member has already paid for this cycle.");
+        }
 
         Contribution contribution;
+
         try
         {
-            contribution = new Contribution(stokvelId, request.UserId, request.Amount, request.ContributionCycleId);
+            contribution = new Contribution(
+                stokvelId,
+                request.UserId,
+                request.Amount,
+                request.ContributionCycleId);
         }
         catch (ArgumentException ex)
         {
@@ -72,7 +111,9 @@ public class RecordContributionService
         }
 
         await _contributionStore.AddAsync(contribution);
-        var response = ContributionMapper.ToResponse(contribution);
+
+        var response = ContributionMapper.ToResponse(
+            contribution);
 
         await _idempotencyStore.SaveAsync(new IdempotencyRecord
         {
@@ -82,14 +123,19 @@ public class RecordContributionService
             ResponseBodyJson = JsonSerializer.Serialize(response)
         });
 
+        // Only count newly recorded contributions.
+        // Never attach amounts, names, user IDs or stokvel IDs.
+        RondiTrackMetrics.ContributionsRecorded.Add(1);
+
         return response;
     }
 
     private static string Hash(ContributionRequest request)
     {
         var json = JsonSerializer.Serialize(request);
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
+        var bytes = SHA256.HashData(
+            Encoding.UTF8.GetBytes(json));
+
         return Convert.ToHexString(bytes);
     }
 }
-

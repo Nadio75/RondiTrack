@@ -122,30 +122,95 @@ public class AuthSecurityTests
             StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public async Task Wrong_password_and_unknown_email_return_same_problem()
+   
+[Fact]
+public async Task Wrong_password_and_unknown_email_return_same_problem()
+{
+    using var client = CreateClient();
+    var email = NewEmail();
+
+    await RegisterAsync(client, email);
+
+    using var wrongPassword = await LoginAsync(
+        client, email, "IncorrectPassword123!");
+
+    using var unknownEmail = await LoginAsync(
+        client, NewEmail(), "IncorrectPassword123!");
+
+    Assert.Equal(
+        HttpStatusCode.Unauthorized,
+        wrongPassword.StatusCode);
+
+    Assert.Equal(
+        HttpStatusCode.Unauthorized,
+        unknownEmail.StatusCode);
+
+    Assert.Equal(
+        "application/problem+json",
+        wrongPassword.Content.Headers.ContentType?.MediaType);
+
+    Assert.Equal(
+        "application/problem+json",
+        unknownEmail.Content.Headers.ContentType?.MediaType);
+
+    using var first = JsonDocument.Parse(
+        await wrongPassword.Content.ReadAsStringAsync());
+
+    using var second = JsonDocument.Parse(
+        await unknownEmail.Content.ReadAsStringAsync());
+
+    // Both authentication failures must have the same
+    // security-relevant response fields.
+    foreach (var propertyName in new[]
     {
-        using var client = CreateClient();
-        var email = NewEmail();
+        "status",
+        "title",
+        "detail",
+        "type"
+    })
+    {
+        var firstHasProperty =
+            first.RootElement.TryGetProperty(
+                propertyName, out var firstValue);
 
-        await RegisterAsync(client, email);
+        var secondHasProperty =
+            second.RootElement.TryGetProperty(
+                propertyName, out var secondValue);
 
-        var wrongPassword = await LoginAsync(
-            client, email, "IncorrectPassword123!");
+        Assert.Equal(firstHasProperty, secondHasProperty);
 
-        var unknownEmail = await LoginAsync(
-            client, NewEmail(), "IncorrectPassword123!");
-
-        Assert.Equal(HttpStatusCode.Unauthorized,
-            wrongPassword.StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized,
-            unknownEmail.StatusCode);
-
-        var first = await wrongPassword.Content.ReadAsStringAsync();
-        var second = await unknownEmail.Content.ReadAsStringAsync();
-
-        Assert.Equal(first, second);
+        if (firstHasProperty)
+        {
+            Assert.Equal(
+                firstValue.GetRawText(),
+                secondValue.GetRawText());
+        }
     }
+
+    // Each response must contain a valid trace correlation ID.
+    var firstCorrelationId = first.RootElement
+        .GetProperty("correlationId")
+        .GetString();
+
+    var secondCorrelationId = second.RootElement
+        .GetProperty("correlationId")
+        .GetString();
+
+    Assert.NotNull(firstCorrelationId);
+    Assert.NotNull(secondCorrelationId);
+
+    Assert.Equal(32, firstCorrelationId.Length);
+    Assert.Equal(32, secondCorrelationId.Length);
+
+    Assert.True(
+        Guid.TryParseExact(
+            firstCorrelationId, "N", out _));
+
+    Assert.True(
+        Guid.TryParseExact(
+            secondCorrelationId, "N", out _));
+}
+
 
     [Fact]
     public async Task Refresh_rotates_token_and_returns_new_access_token()
