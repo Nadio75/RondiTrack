@@ -1,28 +1,107 @@
-using RondiTrack.Infrastructure;
-using RondiTrack.Domain;
-using Scalar.AspNetCore;    
+using System.Diagnostics;
 using FluentValidation;
-using RondiTrack.Data;
-using RondiTrack.Services;
-using RondiTrack.Validation;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using RondiTrack.Authorization;
-using System.Text;
-
-
+using RondiTrack.Exceptions;
+using RondiTrack.Data;
+using RondiTrack.Domain;
+using RondiTrack.Health;
+using RondiTrack.Infrastructure;
+using RondiTrack.Services;
+using RondiTrack.Validation;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --- Services registration (before Build()) ---
+// --------------------------------------------------
+// 1. Controllers and OpenAPI
+// --------------------------------------------------
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<ValidationFilter>();
+    options.Filters.Add<CorrelationProblemDetailsFilter>();
+});
+
 builder.Services.AddOpenApi();
-// JWT authentication: validate signature, issuer, audience and lifetime.
+
+// --------------------------------------------------
+// 2. OpenTelemetry
+// --------------------------------------------------
+
+const string serviceName = "ronditrack-api";
+
+var otlpEndpoint =
+    builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
+
+var enableOtlpExport =
+    !string.IsNullOrWhiteSpace(otlpEndpoint);
+
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource =>
+    {
+        resource.AddService(serviceName);
+    })
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddAspNetCoreInstrumentation(options =>
+            {
+                options.Filter = context =>
+                    !context.Request.Path.StartsWithSegments(
+                        "/health");
+            })
+            .AddSource("Npgsql")
+            .AddSource(PayoutService.ActivitySourceName);
+
+        if (enableOtlpExport)
+        {
+            tracing.AddOtlpExporter();
+        }
+    })
+    .WithMetrics(metrics =>
+    {
+        metrics.AddAspNetCoreInstrumentation();
+
+        metrics.AddMeter(
+            RondiTrack.Telemetry.RondiTrackMetrics.MeterName);
+
+        if (enableOtlpExport)
+        {
+            metrics.AddOtlpExporter();
+        }
+    });
+
+builder.Logging.AddFilter(
+    "Microsoft.EntityFrameworkCore.Database.Command",
+    LogLevel.Warning);
+
+builder.Logging.AddOpenTelemetry(options =>
+{
+    options.IncludeFormattedMessage = false;
+    options.IncludeScopes = true;
+
+    if (enableOtlpExport)
+    {
+        options.AddOtlpExporter();
+    }
+});
+
+// --------------------------------------------------
+// 3. JWT authentication
+// --------------------------------------------------
+
 var jwtIssuer = builder.Configuration["Jwt:Issuer"]
     ?? throw new InvalidOperationException(
         "Missing required configuration: Jwt:Issuer.");
@@ -60,58 +139,86 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidIssuer = jwtIssuer,
+        options.TokenValidationParameters =
+            new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = jwtIssuer,
 
-            ValidateAudience = true,
-            ValidAudience = jwtAudience,
+                ValidateAudience = true,
+                ValidAudience = jwtAudience,
 
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(jwtKeyBytes),
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey =
+                    new SymmetricSecurityKey(jwtKeyBytes),
 
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromMinutes(1)
-        };
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.FromMinutes(1)
+            };
+
         options.Events = new JwtBearerEvents
-{
-    OnChallenge = async context =>
-    {
-        context.HandleResponse();
-        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        context.Response.ContentType = "application/problem+json";
-
-        await context.Response.WriteAsJsonAsync(new ProblemDetails
         {
-            Status = 401,
-            Title = "Authentication required",
-            Detail = "Valid authentication credentials are required."
-        });
-    },
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
 
-    OnForbidden = async context =>
-    {
-        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-        context.Response.ContentType = "application/problem+json";
+                var correlationId =
+                    Activity.Current?.TraceId.ToString()
+                    ?? context.HttpContext.TraceIdentifier;
 
-        await context.Response.WriteAsJsonAsync(new ProblemDetails
-        {
-            Status = 403,
-            Title = "Forbidden",
-            Detail = "You are not authorized to perform this operation."
-        });
-    }
-};
-        ;
+                var problem = new ProblemDetails
+                {
+                    Status = 401,
+                    Title = "Authentication required",
+                    Detail =
+                        "Valid authentication credentials are required."
+                };
+
+                problem.Extensions["correlationId"] =
+                    correlationId;
+
+                context.Response.StatusCode =
+                    StatusCodes.Status401Unauthorized;
+
+                await context.Response.WriteAsJsonAsync(
+                    problem,
+                    options: null,
+                    contentType: "application/problem+json");
+            },
+
+            OnForbidden = async context =>
+            {
+                var correlationId =
+                    Activity.Current?.TraceId.ToString()
+                    ?? context.HttpContext.TraceIdentifier;
+
+                var problem = new ProblemDetails
+                {
+                    Status = 403,
+                    Title = "Forbidden",
+                    Detail =
+                        "You are not authorized to perform this operation."
+                };
+
+                problem.Extensions["correlationId"] =
+                    correlationId;
+
+                context.Response.StatusCode =
+                    StatusCodes.Status403Forbidden;
+
+                await context.Response.WriteAsJsonAsync(
+                    problem,
+                    options: null,
+                    contentType: "application/problem+json");
+            }
+        };
     });
 
-// Our in-memory data stores, each shared as a single instance for the app's lifetime.
-builder.Services.AddScoped<IStokvelStore, EfStokvelStore>();
-builder.Services.AddSingleton<IContributionStore, InMemoryContributionStore>();
-builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
-builder.Services.AddScoped<PayoutService>();
-builder.Services.AddScoped<IContributionCycleStore, EfContributionCycleStore>();builder.Services.AddDbContext<RondiTrack.Infrastructure.RondiTrackDbContext>(options =>
+// --------------------------------------------------
+// 4. Database
+// --------------------------------------------------
+
+builder.Services.AddDbContext<RondiTrackDbContext>(options =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("RondiTrack"),
         npgsqlOptions => npgsqlOptions.EnableRetryOnFailure(
@@ -119,100 +226,206 @@ builder.Services.AddScoped<IContributionCycleStore, EfContributionCycleStore>();
             maxRetryDelay: TimeSpan.FromSeconds(10),
             errorCodesToAdd: null)));
 
-// Services hold no state of their own — they just orchestrate the stores above,
-// which are already singletons — so these are registered as Scoped.
+// --------------------------------------------------
+// 5. Stores and services
+// --------------------------------------------------
+
+builder.Services.AddScoped<
+    IStokvelStore,
+    EfStokvelStore>();
+
+builder.Services.AddSingleton<
+    IContributionStore,
+    InMemoryContributionStore>();
+
+builder.Services.AddSingleton<
+    IIdempotencyStore,
+    InMemoryIdempotencyStore>();
+
+builder.Services.AddScoped<
+    IContributionCycleStore,
+    EfContributionCycleStore>();
+
+builder.Services.AddScoped<PayoutService>();
 builder.Services.AddScoped<StokvelMembershipService>();
 builder.Services.AddScoped<RecordContributionService>();
-// Registers our handler; if it's ever NOT the one that ends up formatting a response
-// (shouldn't happen, since it always returns true), AddProblemDetails() is the fallback
-// that still guarantees a problem+json shape.
-builder.Services.AddExceptionHandler<RondiTrack.Exceptions.RondiTrackExceptionHandler>();
-builder.Services.AddProblemDetails();
 
-// Auto-registers every AbstractValidator<T> in this project — no need to list them by hand.
-// Register validators from this assembly without requiring the FluentValidation
-// dependency-injection extension package.
+builder.Services.AddScoped<PasswordHasher<User>>();
+
+// --------------------------------------------------
+// 6. Exception handling
+// --------------------------------------------------
+
+builder.Services.AddExceptionHandler<
+    RondiTrack.Exceptions.RondiTrackExceptionHandler>();
+
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        context.ProblemDetails.Extensions["correlationId"] =
+            Activity.Current?.TraceId.ToString()
+            ?? context.HttpContext.TraceIdentifier;
+    };
+});
+
+// --------------------------------------------------
+// 7. Health checks
+// --------------------------------------------------
+
+// Liveness checks whether the API is running.
+// Readiness checks PostgreSQL without EF retry delays.
+//
+// The five-second health-check timeout provides
+// a deadline for the readiness check.
+builder.Services.AddHealthChecks()
+    .AddCheck<PostgresReadinessHealthCheck>(
+        name: "postgresql",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: new[] { "ready" },
+        timeout: TimeSpan.FromSeconds(5));
+
+// --------------------------------------------------
+// 8. FluentValidation
+// --------------------------------------------------
+
 foreach (var validator in typeof(Program).Assembly.GetTypes()
     .Where(type => !type.IsAbstract && !type.IsInterface)
     .SelectMany(type => type.GetInterfaces()
-        .Where(service => service.IsGenericType &&
-            service.GetGenericTypeDefinition() == typeof(IValidator<>))
-        .Select(service => new { service, implementation = type })))
+        .Where(service =>
+            service.IsGenericType &&
+            service.GetGenericTypeDefinition() ==
+                typeof(IValidator<>))
+        .Select(service => new
+        {
+            service,
+            implementation = type
+        })))
 {
-    builder.Services.AddTransient(validator.service, validator.implementation);
+    builder.Services.AddTransient(
+        validator.service,
+        validator.implementation);
 }
 
-// Runs ValidationFilter on every controller action, before the action body executes.
-builder.Services.AddControllers(options =>
-{
-    options.Filters.Add<ValidationFilter>();
-});
-builder.Services.AddScoped<PasswordHasher<User>>();
-builder.Services.AddScoped<IAuthorizationHandler, StokvelRoleHandler>();
-builder.Services.AddScoped<IStokvelAccessService, StokvelAccessService>();
+// --------------------------------------------------
+// 9. Authorization
+// --------------------------------------------------
+
+builder.Services.AddScoped<
+    IAuthorizationHandler,
+    StokvelRoleHandler>();
+
+builder.Services.AddScoped<
+    IStokvelAccessService,
+    StokvelAccessService>();
 
 builder.Services.AddAuthorization(options =>
 {
     options.FallbackPolicy =
-        new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        new AuthorizationPolicyBuilder()
             .RequireAuthenticatedUser()
             .Build();
-      options.FallbackPolicy = new AuthorizationPolicyBuilder()
-        .RequireAuthenticatedUser()
-        .Build();
 
     options.AddPolicy("StokvelMember", policy =>
     {
         policy.RequireAuthenticatedUser();
-        policy.AddRequirements(new StokvelRoleRequirement("Member"));
+
+        policy.AddRequirements(
+            new StokvelRoleRequirement("Member"));
     });
 
-    options.AddPolicy("StokvelTreasurerOrChairperson", policy =>
+    options.AddPolicy(
+        "StokvelTreasurerOrChairperson",
+        policy =>
+        {
+            policy.RequireAuthenticatedUser();
+
+            policy.AddRequirements(
+                new StokvelRoleRequirement(
+                    "TreasurerOrChairperson"));
+        });
+
+    options.AddPolicy("StokvelChairperson", policy =>
     {
         policy.RequireAuthenticatedUser();
+
         policy.AddRequirements(
-            new StokvelRoleRequirement("TreasurerOrChairperson"));
+            new StokvelRoleRequirement("Chairperson"));
     });
-    options.AddPolicy("StokvelChairperson", policy =>
-{
-    policy.RequireAuthenticatedUser();
-    policy.AddRequirements(new StokvelRoleRequirement("Chairperson"));
-});
 });
 
-
-//builder.Services.AddProblemDetails();
+// --------------------------------------------------
+// 10. Build application
+// --------------------------------------------------
 
 var app = builder.Build();
-// Temporary manual volume-seeding command.
-// Run with: dotnet run -- --seed-volume
 
-// --- Middleware pipeline (after Build(), before Run()) ---
+// --------------------------------------------------
+// 11. Middleware
+// --------------------------------------------------
 
-// Must come before anything that could throw — this is what actually invokes
-// RondiTrackExceptionHandler whenever an action, filter, or piece of middleware throws.
 app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
 {
-    // This exposes the raw OpenAPI JSON document at /openapi/v1.json
     app.MapOpenApi().AllowAnonymous();
-
-    // This maps the actual Scalar UI, which reads that JSON document and
-    // renders the interactive browser page. By default it's served at /scalar
     app.MapScalarApiReference().AllowAnonymous();
 }
 
 app.UseHttpsRedirection();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Wires up all your [ApiController] classes (UsersController, StokvelsController)
-// to their routes.
+// --------------------------------------------------
+// 12. Health endpoints
+// --------------------------------------------------
+
+var healthOptions = new HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        // Only return a safe, plain-text status.
+        context.Response.ContentType = "text/plain";
+
+        var result = report.Status == HealthStatus.Healthy
+            ? "Healthy"
+            : "Unhealthy";
+
+        await context.Response.WriteAsync(result);
+    }
+};
+
+// Liveness does not depend on PostgreSQL.
+app.MapHealthChecks(
+    "/health/live",
+    new HealthCheckOptions
+    {
+        Predicate = _ => false,
+        ResponseWriter = healthOptions.ResponseWriter
+    })
+    .AllowAnonymous();
+
+// Readiness checks PostgreSQL with a timeout.
+app.MapHealthChecks(
+    "/health/ready",
+    new HealthCheckOptions
+    {
+        Predicate = check =>
+            check.Tags.Contains("ready"),
+        ResponseWriter = healthOptions.ResponseWriter
+    })
+    .AllowAnonymous();
+
+// --------------------------------------------------
+// 13. API controllers
+// --------------------------------------------------
+
 app.MapControllers();
 
 app.Run();
-// Makes the implicit top-level Program class visible to the test project,
-// so WebApplicationFactory<Program> can spin the whole app up for tests.
-public partial class Program { }
 
+// Required by integration tests.
+public partial class Program
+{
+}

@@ -1,7 +1,9 @@
+
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using RondiTrack.Infrastructure;
+using RondiTrack.Telemetry;
 
 namespace RondiTrack.Authorization;
 
@@ -23,7 +25,9 @@ public sealed class StokvelAccessService : IStokvelAccessService
         Guid stokvelId,
         string requiredRole)
     {
-        var resource = new StokvelAccessResource(stokvelId, requiredRole);
+        var resource = new StokvelAccessResource(
+            stokvelId,
+            requiredRole);
 
         var policyName = requiredRole == "Member"
             ? "StokvelMember"
@@ -37,20 +41,27 @@ public sealed class StokvelAccessService : IStokvelAccessService
             policyName);
 
         if (result.Succeeded)
+        {
             return StokvelAccessResult.Allowed;
+        }
 
         var exists = await _db.Stokvels
             .AsNoTracking()
             .AnyAsync(s => s.Id == stokvelId);
 
         if (!exists)
-            return StokvelAccessResult.NotFound;
+        {
+            return Refuse(StokvelAccessResult.NotFound);
+        }
 
-        var userIdValue = user.FindFirstValue(ClaimTypes.NameIdentifier)
+        var userIdValue =
+            user.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? user.FindFirstValue("sub");
 
         if (!Guid.TryParse(userIdValue, out var userId))
-            return StokvelAccessResult.NotFound;
+        {
+            return Refuse(StokvelAccessResult.NotFound);
+        }
 
         var isMember = await _db.StokvelMembers
             .AsNoTracking()
@@ -59,7 +70,25 @@ public sealed class StokvelAccessService : IStokvelAccessService
                 m.UserId == userId);
 
         return isMember
-            ? StokvelAccessResult.Forbidden
-            : StokvelAccessResult.NotFound;
+            ? Refuse(StokvelAccessResult.Forbidden)
+            : Refuse(StokvelAccessResult.NotFound);
+    }
+
+    private static StokvelAccessResult Refuse(
+        StokvelAccessResult result)
+    {
+        // Only two permitted tag values.
+        // Never include user IDs, stokvel IDs or role names.
+        var outcome = result == StokvelAccessResult.Forbidden
+            ? "forbidden"
+            : "not_found";
+
+        RondiTrackMetrics.AuthorizationRefusals.Add(
+            1,
+            new KeyValuePair<string, object?>(
+                "outcome",
+                outcome));
+
+        return result;
     }
 }
