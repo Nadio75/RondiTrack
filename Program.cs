@@ -360,7 +360,7 @@ builder.Services.AddScoped<StokvelMembershipService>();
 builder.Services.AddScoped<RecordContributionService>();
 
 builder.Services.AddScoped<PasswordHasher<User>>();
-
+builder.Services.AddSingleton(TimeProvider.System);
 // --------------------------------------------------
 // 6. Exception handling
 // --------------------------------------------------
