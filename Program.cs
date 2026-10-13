@@ -13,6 +13,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using RondiTrack.Authorization;
+using RondiTrack.Common;
 using RondiTrack.Exceptions;
 using RondiTrack.Data;
 using RondiTrack.Domain;
@@ -35,6 +36,25 @@ builder.Services.AddControllers(options =>
 });
 
 builder.Services.AddOpenApi();
+
+// Only configured frontend origins may make credentialed browser requests.
+// Development uses http://localhost:3000; production defaults to none.
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? Array.Empty<string>();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(CorsPolicies.Frontend, policy =>
+    {
+        policy.WithOrigins(allowedOrigins)
+            .AllowCredentials()
+            .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE")
+            .WithHeaders("Authorization", "Content-Type", "Idempotency-Key", "traceparent")
+            .WithExposedHeaders("Retry-After")
+            .SetPreflightMaxAge(TimeSpan.FromMinutes(10));
+    });
+});
 
 // --------------------------------------------------
 // 2. OpenTelemetry
@@ -373,6 +393,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseRouting();
+app.UseCors(CorsPolicies.Frontend);
 
 app.UseAuthentication();
 app.UseAuthorization();
