@@ -22,7 +22,7 @@ public class NegativePathTests
     public async Task Create_Stokvel_With_Empty_Name_Returns_400_ProblemJson()
     {
         var response = await _client.PostAsJsonAsync(
-            "/api/stokvels",
+            "/api/v1/stokvels",
             new
             {
                 name = "",
@@ -41,7 +41,7 @@ public class NegativePathTests
         var randomId = Guid.NewGuid();
 
         var response = await _client.GetAsync(
-            $"/api/stokvels/{randomId}");
+            $"/api/v1/stokvels/{randomId}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal(
@@ -57,7 +57,7 @@ public class NegativePathTests
         await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
 
         var firstCycleResponse = await _client.PostAsJsonAsync(
-            $"/api/stokvels/{stokvel.Id}/cycles",
+            $"/api/v1/stokvels/{stokvel.Id}/cycles",
             new
             {
                 period = "2026-09",
@@ -67,7 +67,7 @@ public class NegativePathTests
         Assert.Equal(HttpStatusCode.Created, firstCycleResponse.StatusCode);
 
         var duplicateCycleResponse = await _client.PostAsJsonAsync(
-            $"/api/stokvels/{stokvel.Id}/cycles",
+            $"/api/v1/stokvels/{stokvel.Id}/cycles",
             new
             {
                 period = "2026-09",

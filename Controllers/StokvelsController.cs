@@ -11,10 +11,10 @@ using RondiTrack.Models.Dtos;
 using RondiTrack.Helpers;
 using RondiTrack.Authorization;
 using System.Security.Claims;
+using RondiTrack.Common;
 
 [ApiController]
-[Route("api/stokvels")]
-public class StokvelsController : ControllerBase
+[Route(ApiRoutes.V1 + "/stokvels")]public class StokvelsController : ControllerBase
 {
     private readonly IStokvelStore _store;
     private readonly StokvelMembershipService _membershipService;

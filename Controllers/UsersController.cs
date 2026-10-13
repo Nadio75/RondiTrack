@@ -5,10 +5,10 @@ namespace RondiTrack.Controllers;
 using Microsoft.AspNetCore.Mvc;
 using RondiTrack.Domain;
 using RondiTrack.Mapping;
+using RondiTrack.Common;
 
 [ApiController]
-[Route("api/users")]
-public class UsersController : ControllerBase
+[Route(ApiRoutes.V1 + "/users")]public class UsersController : ControllerBase
 {
     private readonly IStokvelStore _store;
 

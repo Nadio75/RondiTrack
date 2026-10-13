@@ -25,7 +25,7 @@ public class EdgeCaseTests
         await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
 
         var response = await _client.GetAsync(
-            $"/api/stokvels/{stokvel.Id}/cycles");
+            $"/api/v1/stokvels/{stokvel.Id}/cycles");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -49,7 +49,7 @@ public class EdgeCaseTests
         await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
 
         var response = await _client.PostAsJsonAsync(
-            $"/api/stokvels/{stokvel.Id}/cycles",
+            $"/api/v1/stokvels/{stokvel.Id}/cycles",
             new { period, targetAmount = 1000 });
 
         Assert.Equal((HttpStatusCode)expected, response.StatusCode);
@@ -63,7 +63,7 @@ public class EdgeCaseTests
         int expected)
     {
         var response = await _client.PostAsJsonAsync(
-            "/api/stokvels",
+            "/api/v1/stokvels",
             new
             {
                 name = new string('a', length),
@@ -114,7 +114,7 @@ public class EdgeCaseTests
         var cycle = await _client.CreateCycleAsync(owner.Id);
 
         var response = await _client.GetAsync(
-            $"/api/stokvels/{other.Id}/cycles/{cycle.Id}");
+            $"/api/v1/stokvels/{other.Id}/cycles/{cycle.Id}");
 
         response.AssertProblem(HttpStatusCode.NotFound);
     }
@@ -125,7 +125,7 @@ public class EdgeCaseTests
         var s = await _client.ArrangeMemberWithCycleAsync(_factory);
 
         (await _client.DeleteAsync(
-            $"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}"))
+            $"/api/v1/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}"))
             .EnsureSuccessStatusCode();
 
         var response = await _client.PostContributionAsync(
@@ -145,11 +145,11 @@ public class EdgeCaseTests
         await _client.CreateCycleAsync(stokvel.Id);
 
         (await _client.DeleteAsync(
-            $"/api/stokvels/{stokvel.Id}"))
+            $"/api/v1/stokvels/{stokvel.Id}"))
             .EnsureSuccessStatusCode();
 
         var response = await _client.GetAsync(
-            $"/api/stokvels/{stokvel.Id}/cycles");
+            $"/api/v1/stokvels/{stokvel.Id}/cycles");
 
         response.AssertProblem(HttpStatusCode.NotFound);
     }

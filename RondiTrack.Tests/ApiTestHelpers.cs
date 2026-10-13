@@ -13,14 +13,14 @@ internal static class ApiTestHelpers
 {
     public static async Task<UserResponse> CreateUserAsync(this HttpClient client, string name = "Test User")
     {
-        var response = await client.PostAsJsonAsync("/api/users", new { name, contactNumber = "0821234567" });
+        var response = await client.PostAsJsonAsync("/api/v1/users", new { name, contactNumber = "0821234567" });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<UserResponse>())!;
     }
 
     public static async Task<StokvelResponse> CreateStokvelAsync(this HttpClient client, decimal contributionAmount = 500m)
     {
-        var response = await client.PostAsJsonAsync("/api/stokvels", new
+        var response = await client.PostAsJsonAsync("/api/v1/stokvels", new
         {
             name = "Test Stokvel " + Guid.NewGuid(),
             contributionAmount
@@ -32,13 +32,13 @@ internal static class ApiTestHelpers
     public static async Task<ContributionCycleResponse> CreateCycleAsync(
         this HttpClient client, Guid stokvelId, string period = "2026-09", decimal targetAmount = 1000m)
     {
-        var response = await client.PostAsJsonAsync($"/api/stokvels/{stokvelId}/cycles", new { period, targetAmount });
+        var response = await client.PostAsJsonAsync($"/api/v1/stokvels/{stokvelId}/cycles", new { period, targetAmount });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ContributionCycleResponse>())!;
     }
 
     public static Task<HttpResponseMessage> AddMemberAsync(this HttpClient client, Guid stokvelId, Guid userId) =>
-        client.PostAsJsonAsync($"/api/stokvels/{stokvelId}/members", new { userId });
+        client.PostAsJsonAsync($"/api/v1/stokvels/{stokvelId}/members", new { userId });
 
    public static void UseTestUser(this HttpClient client, Guid userId)
 {
@@ -82,7 +82,7 @@ public static async Task<ApiScenario> ArrangeMemberWithCycleAsync(
     public static Task<HttpResponseMessage> PostContributionAsync(
         this HttpClient client, Guid stokvelId, string? key, object body)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/stokvels/{stokvelId}/contributions")
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/stokvels/{stokvelId}/contributions")
         {
             Content = JsonContent.Create(body)
         };
