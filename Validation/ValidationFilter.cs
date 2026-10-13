@@ -1,53 +1,71 @@
-using RondiTrack.Models.Dtos;
-using RondiTrack.Models;
-using RondiTrack.Domain;
-// Validation/ValidationFilter.cs
-namespace RondiTrack.Validation;
-
+using System.Text.Json;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
+namespace RondiTrack.Validation;
+
 public class ValidationFilter : IAsyncActionFilter
 {
-    public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
+    public async Task OnActionExecutionAsync(
+        ActionExecutingContext context,
+        ActionExecutionDelegate next)
     {
-        // Look at every argument the model binder produced for this action (route params,
-        // query params, and — the one we actually care about — the request body DTO).
         foreach (var argument in context.ActionArguments.Values)
         {
-            if (argument is null) continue;
+            if (argument is null)
+                continue;
 
-            // Ask DI: "is there an IValidator<T> registered for this argument's exact type?"
-            var validatorType = typeof(IValidator<>).MakeGenericType(argument.GetType());
-            if (context.HttpContext.RequestServices.GetService(validatorType) is not IValidator validator)
-                continue; // no validator for this type (e.g. a Guid route param) — nothing to check
+            var validatorType = typeof(IValidator<>)
+                .MakeGenericType(argument.GetType());
 
-            var validationContext = new ValidationContext<object>(argument);
-            var result = await validator.ValidateAsync(validationContext);
+            if (context.HttpContext.RequestServices
+                .GetService(validatorType) is not IValidator validator)
+            {
+                continue;
+            }
+
+            var validationContext =
+                new ValidationContext<object>(argument);
+
+            var result = await validator.ValidateAsync(
+                validationContext,
+                context.HttpContext.RequestAborted);
 
             if (!result.IsValid)
             {
                 foreach (var error in result.Errors)
-                    context.ModelState.AddModelError(error.PropertyName, error.ErrorMessage);
-
-                // Reuses ASP.NET Core's built-in ValidationProblemDetails shape — already
-                // problem+json, consistent with everything AddProblemDetails() already covers.
-                var problemDetails = new ValidationProblemDetails(context.ModelState)
                 {
-                    Status = StatusCodes.Status400BadRequest,
-                    Title = "One or more validation errors occurred."
-                };
+                    var propertyName = error.PropertyName;
+
+                    if (!string.IsNullOrEmpty(propertyName))
+                    {
+                        propertyName = JsonNamingPolicy.CamelCase
+                            .ConvertName(propertyName);
+                    }
+
+                    context.ModelState.AddModelError(
+                        propertyName,
+                        error.ErrorMessage);
+                }
+
+                var problemDetails =
+                    new ValidationProblemDetails(context.ModelState)
+                    {
+                        Status = StatusCodes.Status400BadRequest,
+                        Title = "One or more validation errors occurred."
+                    };
 
                 context.Result = new ObjectResult(problemDetails)
                 {
                     StatusCode = StatusCodes.Status400BadRequest,
                     ContentTypes = { "application/problem+json" }
                 };
-                return; // stop here — the controller action never runs
+
+                return;
             }
         }
 
-        await next(); // everything validated cleanly, let the request continue
+        await next();
     }
 }

@@ -1800,3 +1800,549 @@ Assignment 6.2 adds an observability foundation to RondiTrack.
 The application now has distributed tracing, custom business spans, operational metrics, correlation-aware errors, privacy-conscious logging checks and separate liveness and readiness endpoints.
 
 Together, these features make the API easier to troubleshoot and monitor while reducing unnecessary exposure of sensitive information.
+
+# Assignment 6.3 — Ready for the Frontend
+
+## 1. Assignment Overview
+
+Assignment 6.3 focuses on preparing the RondiTrack backend API for integration with a frontend application.
+
+Previous assignments established the database, business rules, authentication, authorization, observability, and automated tests. However, a frontend also needs a predictable and secure way to communicate with the backend.
+
+The objective of this assignment was to make the API easier and safer for a frontend developer to consume.
+
+The work was divided into six stages:
+
+1. API versioning.
+2. Cross-Origin Resource Sharing (CORS).
+3. Rate limiting.
+4. An authenticated home dashboard endpoint.
+5. Consistent API error responses and OpenAPI contracts.
+6. A generated TypeScript API client.
+
+A final verification stage checked the complete test suite and confirmed that integration tests could run without the local PostgreSQL development server.
+
+---
+
+## 2. Stage 1 — API Versioning
+
+### What was required?
+
+The API needed a stable, versioned URL structure.
+
+An API is a contract between the backend and frontend. If the backend changes its endpoints without warning, an existing frontend may stop working.
+
+Versioning allows future changes to be introduced while preserving compatibility with existing clients.
+
+### What we implemented
+
+The API endpoints were organized under the `/api/v1` prefix.
+
+For example:
+
+```http
+GET /api/v1/me/home
+```
+
+The `v1` portion identifies version 1 of the API.
+
+### Why we did this
+
+Imagine a mobile application is using version 1 of RondiTrack.
+
+Later, the backend team introduces a new response structure. Rather than unexpectedly breaking the existing mobile application, the team can introduce a future version of the API.
+
+Versioning makes it easier to maintain compatibility and coordinate frontend and backend development.
+
+### Verification
+
+Stage 1 was completed with 137 passing automated tests.
+
+Git commit: `8d1c8e0`
+
+---
+
+## 3. Stage 2 — CORS Configuration
+
+### What was required?
+
+The backend needed to support requests from an approved frontend origin.
+
+Browsers enforce a security mechanism called Cross-Origin Resource Sharing, or CORS.
+
+A frontend and backend may run at different addresses during development.
+
+For example:
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:5000`
+
+Even though both applications run on the same computer, the browser treats these addresses as different origins.
+
+### What we implemented
+
+We configured CORS in the ASP.NET Core application.
+
+The configuration allows approved frontend origins to communicate with the API rather than permitting every website automatically.
+
+### Why we did this
+
+Without the appropriate CORS configuration, a browser may block a frontend request even when the backend endpoint itself works correctly.
+
+CORS provides a controlled way to allow browser-based frontend applications to access the API.
+
+CORS is not a replacement for authentication or authorization. The API must still validate the user's identity and permissions.
+
+### Verification
+
+Stage 2 was completed with 141 passing automated tests.
+
+Git commit: `8fbf3a5`
+
+---
+
+## 4. Stage 3 — Rate Limiting
+
+### What was required?
+
+The API needed protection against excessive requests.
+
+Rate limiting restricts how frequently a client can access certain endpoints within a defined period.
+
+This is particularly important for authentication endpoints, which can be targeted by repeated login attempts.
+
+### What we implemented
+
+Rate limiting was configured in the ASP.NET Core application.
+
+The login endpoint has a dedicated rate-limiting policy.
+
+The automated security-test host uses a higher test-only login limit so that legitimate automated test requests do not interfere with one another.
+
+### Why we did this
+
+Without rate limiting, a client could send a very large number of requests in a short period.
+
+This could overload the application or make password-guessing attacks easier.
+
+Rate limiting helps protect server resources and reduces certain forms of abuse.
+
+When a client exceeds an applicable limit, the API can respond with HTTP 429, meaning Too Many Requests.
+
+### Verification
+
+Stage 3 was completed with 145 passing automated tests.
+
+Git commit: `fa968dc`
+
+---
+
+## 5. Stage 4 — Authenticated Home Dashboard
+
+### What was required?
+
+The frontend needed an endpoint that could supply information for a signed-in user's home screen.
+
+Instead of forcing the frontend to coordinate many separate requests for its initial dashboard, the backend provides a dedicated endpoint.
+
+### What we implemented
+
+The following endpoint was introduced:
+
+```http
+GET /api/v1/me/home
+```
+
+The endpoint requires authentication.
+
+The frontend supplies a JWT access token:
+
+```http
+Authorization: Bearer <access-token>
+```
+
+The backend identifies the authenticated user and returns the dashboard response.
+
+### Why we did this
+
+A frontend home screen should be able to load its required information without duplicating backend business logic.
+
+A dedicated endpoint makes the frontend simpler and provides a clear contract for dashboard data.
+
+It also ensures that dashboard information is associated with the authenticated user rather than an arbitrary user identifier supplied by the browser.
+
+### Verification
+
+Stage 4 was completed with 149 passing automated tests.
+
+Git commit: `ce950a6`
+
+---
+
+## 6. Stage 5 — Consistent API Errors and OpenAPI Contracts
+
+### What was required?
+
+Frontend applications need predictable responses when requests fail.
+
+For example, a frontend may need to distinguish between:
+
+- Invalid input.
+- Missing authentication.
+- Insufficient permissions.
+- Missing resources.
+- Conflicting operations.
+- Too many requests.
+- Unexpected server errors.
+
+If every endpoint returns errors in a different format, frontend developers must write special error-handling code for each endpoint.
+
+### What we implemented
+
+We improved the consistency of API error responses.
+
+The changes included:
+
+- Consistent handling of API validation errors.
+- Camel-case validation error property names.
+- Stricter JSON numeric input handling.
+- Corrections to the generated OpenAPI schema for numeric properties.
+- Additional automated tests for the error contract.
+
+### Example: validation errors
+
+If a frontend submits invalid data, the API should return a structured error response that the frontend can inspect.
+
+A consistent response allows the frontend to display a useful message beside the relevant input field.
+
+### Example: numeric values
+
+The `CreateStokvelRequest` model contains a `contributionAmount` property.
+
+Its OpenAPI schema now describes the value as a number:
+
+```json
+{
+  "type": "number",
+  "format": "double"
+}
+```
+
+This matters because TypeScript code generated from OpenAPI should treat the property as a numeric value, not an arbitrary string.
+
+### Why we did this
+
+A reliable API contract reduces misunderstandings between frontend and backend developers.
+
+It also makes automated client generation more accurate.
+
+### Verification
+
+Five new tests were added during this stage.
+
+The complete suite passed 154 tests.
+
+Git commit: `9c4d44c`
+
+---
+
+## 7. Stage 6 — Generated TypeScript API Client
+
+### What was required?
+
+A frontend developer should be able to use TypeScript definitions generated from the backend's OpenAPI document.
+
+OpenAPI describes the API's routes, request bodies, responses, and data structures.
+
+Generating TypeScript definitions reduces the need to manually recreate backend models in frontend code.
+
+### What we implemented
+
+We created a new frontend-client directory:
+
+```text
+clients/
+└── typescript/
+    ├── .gitignore
+    ├── README.md
+    ├── package.json
+    ├── package-lock.json
+    ├── tsconfig.json
+    └── src/
+        ├── generated/
+        │   └── api.d.ts
+        └── home.ts
+```
+
+### Explanation of the files
+
+**`package.json`**
+
+Defines the TypeScript project, its development dependencies, and commands for generating API definitions and checking TypeScript code.
+
+**`package-lock.json`**
+
+Records the installed npm dependency versions so that other developers can reproduce the development environment.
+
+**`tsconfig.json`**
+
+Configures TypeScript compilation and strict type checking.
+
+**`src/generated/api.d.ts`**
+
+Contains TypeScript definitions generated from the backend's OpenAPI document.
+
+These definitions describe API paths and request/response types.
+
+**`src/home.ts`**
+
+Contains a small frontend API helper that demonstrates how to call the authenticated home dashboard endpoint.
+
+**`.gitignore`**
+
+Prevents installed dependencies, generated build folders, and local environment files from being accidentally committed.
+
+**`README.md`**
+
+Explains how to install dependencies, regenerate API definitions, and use the example frontend helper.
+
+### Development tools
+
+The client was created using:
+
+- Node.js 24.
+- npm 11.
+- `openapi-typescript` 7.10.1.
+- TypeScript 5.9.3.
+
+### Generate the API definitions
+
+Start the RondiTrack backend in Development mode:
+
+```powershell
+cd C:\Users\User\RondiTrack
+
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+$env:DOTNET_ENVIRONMENT = "Development"
+
+dotnet run --no-launch-profile --urls "http://localhost:5000"
+```
+
+Then, in another PowerShell window:
+
+```powershell
+cd C:\Users\User\RondiTrack\clients\typescript
+
+npm.cmd ci
+
+npm.cmd run generate
+```
+
+The generation command reads:
+
+```text
+http://localhost:5000/openapi/v1.json
+```
+
+It produces:
+
+```text
+src/generated/api.d.ts
+```
+
+### Check the TypeScript code
+
+Run:
+
+```powershell
+npm.cmd run typecheck
+```
+
+This verifies that the TypeScript code matches the expected types.
+
+### Example frontend request
+
+The helper in `src/home.ts` uses the generated OpenAPI definitions.
+
+A frontend can call it using:
+
+```typescript
+import { getHomeDashboard } from "./home.js";
+
+const dashboard = await getHomeDashboard(
+  "http://localhost:5000",
+  accessToken
+);
+```
+
+Here, `accessToken` is the JWT obtained after a successful login.
+
+The helper sends the token in the `Authorization` header.
+
+It checks whether the HTTP response was successful and throws an error when the request fails.
+
+### Important distinction
+
+The generated `api.d.ts` file contains TypeScript type definitions.
+
+It is not a complete runtime API client.
+
+The `home.ts` file provides an example of a runtime request using the browser's `fetch` function.
+
+The TypeScript definitions help catch mistakes during development, but they do not validate server responses at runtime.
+
+### Why we did this
+
+Suppose the backend changes the name or type of a property.
+
+Without generated types, the frontend developer might not notice the change until the application runs.
+
+With generated TypeScript definitions, incompatible usage can often be detected during type checking.
+
+This makes frontend development more reliable and reduces duplication.
+
+### Verification
+
+The generated definitions included the home dashboard route.
+
+The `contributionAmount` property was generated as a TypeScript `number`.
+
+TypeScript type checking completed successfully.
+
+Git commit: `2a68a77`
+
+---
+
+## 8. Stage 7 — Final Integration Verification
+
+### Objective
+
+The final verification checked that the complete RondiTrack test suite still worked after all Assignment 6.3 changes.
+
+It also checked that automated tests could run independently of the developer's local PostgreSQL database.
+
+### Test environment
+
+The application uses:
+
+- .NET 10.
+- ASP.NET Core.
+- Entity Framework Core.
+- PostgreSQL.
+- xUnit.
+- Docker Desktop.
+- Testcontainers for PostgreSQL.
+
+### Database independence
+
+The test project contains two database-backed test factories:
+
+**`PostgresApiFactory.cs`**
+
+Creates a temporary PostgreSQL 17 database for general API integration tests.
+
+**`RealJwtApiFactory.cs`**
+
+Creates a separate temporary PostgreSQL 17 database for security and real-JWT authentication tests.
+
+Both factories start their containers, configure the test application's database connection, and apply EF Core migrations.
+
+### Verification procedure
+
+The final test was performed with the locally installed PostgreSQL 18 Windows service stopped.
+
+Docker Desktop remained running.
+
+The following command was executed from the repository root:
+
+```powershell
+dotnet test
+```
+
+### Final confirmed result
+
+```text
+Test summary: total: 154, failed: 0, succeeded: 154, skipped: 0
+
+Build succeeded
+```
+
+All 154 tests passed while the local PostgreSQL development service was stopped.
+
+This demonstrates that the automated test suite can use its Docker-backed PostgreSQL databases without depending on the developer's local PostgreSQL service.
+
+After testing, the local PostgreSQL service was restarted successfully.
+
+### Important lesson
+
+A failed build does not always mean that the source code is incorrect.
+
+During verification, an already-running RondiTrack application was locking compiled DLL files.
+
+The problem was resolved by stopping the running application before repeating the test command.
+
+No source-code change was required to fix that file-lock issue.
+
+---
+
+## 9. Assignment 6.3 Git History
+
+The assignment was completed incrementally on the following branch:
+
+```text
+assignment-6.3
+```
+
+The main commits were:
+
+| Stage | Commit | Description |
+|---|---|---|
+| 1 | `8d1c8e0` | API versioning |
+| 2 | `8fbf3a5` | CORS configuration |
+| 3 | `fa968dc` | Rate limiting |
+| 4 | `ce950a6` | Authenticated home dashboard |
+| 5 | `9c4d44c` | Consistent errors and OpenAPI fixes |
+| 6 | `2a68a77` | Generated TypeScript client |
+
+Repository:
+
+https://github.com/Nadio75/RondiTrack/tree/assignment-6.3
+
+---
+
+## 10. What Assignment 6.3 Achieved
+
+Assignment 6.3 improved RondiTrack's readiness for frontend integration.
+
+The backend now has:
+
+- A versioned API route structure.
+- Controlled browser access through CORS.
+- Rate limiting to help protect selected endpoints.
+- An authenticated endpoint for the user's home dashboard.
+- More consistent validation and error responses.
+- Improved OpenAPI numeric type definitions.
+- Generated TypeScript API definitions.
+- A working example of a typed frontend request.
+- A reproducible npm-based TypeScript project.
+- Automated integration tests using Docker PostgreSQL.
+
+These improvements help a frontend developer communicate with the backend through a documented, predictable interface.
+
+They also provide stronger automated checks for compatibility and API behavior.
+
+---
+
+## 11. Final Conclusion
+
+Assignment 6.3 focused on turning RondiTrack from a functioning backend into an API that is easier for a frontend application to consume.
+
+The work introduced API versioning, browser integration configuration, rate limiting, a home dashboard endpoint, consistent error contracts, and generated TypeScript definitions.
+
+The final verification confirmed that the solution built successfully and all 154 automated tests passed.
+
+The integration tests also passed while the local PostgreSQL development server was stopped, confirming their independence from that server.
+
+**Final verified test result: 154 passed, 0 failed, 0 skipped.**
+
+The RondiTrack backend now has a stronger foundation for frontend development and integration.
