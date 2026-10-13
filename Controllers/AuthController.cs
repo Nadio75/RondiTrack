@@ -91,9 +91,11 @@ namespace RondiTrack.Controllers;
         });
     }
 
-    [AllowAnonymous]
-    [HttpPost("login")]
-    public async Task<IActionResult> Login(
+   [AllowAnonymous]
+[HttpPost("login")]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(
+    RondiTrack.Common.RateLimitPolicies.Login)]
+public async Task<IActionResult> Login(
         [FromBody] LoginRequest request)
     {
         var email = request.Email.Trim().ToLowerInvariant();

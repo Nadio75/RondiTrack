@@ -1,3 +1,7 @@
+using System.Globalization;
+using System.Security.Claims;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Diagnostics;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -54,6 +58,91 @@ builder.Services.AddCors(options =>
             .WithExposedHeaders("Retry-After")
             .SetPreflightMaxAge(TimeSpan.FromMinutes(10));
     });
+});
+
+// --------------------------------------------------
+// Rate limiting: configurable fixed windows.
+// Login is partitioned by IP; financial operations by authenticated user.
+// --------------------------------------------------
+var loginLimit = builder.Configuration.GetValue("RateLimiting:Login:PermitLimit", 5);
+var loginWindowSeconds = builder.Configuration.GetValue("RateLimiting:Login:WindowSeconds", 60);
+var financialLimit = builder.Configuration.GetValue("RateLimiting:Financial:PermitLimit", 30);
+var financialWindowSeconds = builder.Configuration.GetValue("RateLimiting:Financial:WindowSeconds", 60);
+
+if (loginLimit <= 0 || loginWindowSeconds <= 0 ||
+    financialLimit <= 0 || financialWindowSeconds <= 0)
+{
+    throw new InvalidOperationException("RateLimiting limits and windows must be positive integers.");
+}
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy(RateLimitPolicies.Login, context =>
+    {
+        // Prefer the actual remote IP. Only trust forwarded headers when
+        // configured for a known reverse proxy; never trust a raw X-Forwarded-For.
+        var ip = context.Connection.RemoteIpAddress?.MapToIPv6().ToString()
+                 ?? "unknown-ip";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"login:{ip}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = loginLimit,
+                Window = TimeSpan.FromSeconds(loginWindowSeconds),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+
+    options.AddPolicy(RateLimitPolicies.Financial, context =>
+    {
+        // A financial request must have a validated identity.
+        // The fallback is deliberately shared, never derived from an untrusted header.
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? context.User.FindFirstValue("sub")
+                     ?? "unauthenticated";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"financial:{userId}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = financialLimit,
+                Window = TimeSpan.FromSeconds(financialWindowSeconds),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+
+    options.OnRejected = async (rejection, cancellationToken) =>
+    {
+        var response = rejection.HttpContext.Response;
+        response.StatusCode = StatusCodes.Status429TooManyRequests;
+
+        var wait = rejection.Lease.TryGetMetadata(
+            MetadataName.RetryAfter, out TimeSpan retryAfter)
+            ? retryAfter
+            : TimeSpan.FromSeconds(1);
+
+        var seconds = Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds));
+        response.Headers.RetryAfter = seconds.ToString(CultureInfo.InvariantCulture);
+
+        var problem = new ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Too many requests",
+            Detail = "Request limit reached. Wait before trying again."
+        };
+        problem.Extensions["correlationId"] =
+            Activity.Current?.TraceId.ToString()
+            ?? rejection.HttpContext.TraceIdentifier;
+
+        await response.WriteAsJsonAsync(
+            problem,
+            options: null,
+            contentType: "application/problem+json",
+            cancellationToken: cancellationToken);
+    };
 });
 
 // --------------------------------------------------
@@ -398,6 +487,7 @@ app.UseRouting();
 app.UseCors(CorsPolicies.Frontend);
 
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 // --------------------------------------------------

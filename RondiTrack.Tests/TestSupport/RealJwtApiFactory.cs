@@ -67,19 +67,28 @@ public sealed class RealJwtApiFactory
 
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        builder.UseSetting(
-            "ConnectionStrings:RondiTrack",
-            _container.GetConnectionString());
+{
+    builder.UseSetting(
+        "ConnectionStrings:RondiTrack",
+        _container.GetConnectionString());
 
-        builder.UseSetting("Jwt:Issuer", "RondiTrackSecurityTests");
-        builder.UseSetting("Jwt:Audience", "RondiTrackSecurityTests");
+    builder.UseSetting("Jwt:Issuer", "RondiTrackSecurityTests");
+    builder.UseSetting("Jwt:Audience", "RondiTrackSecurityTests");
 
-        // Dedicated test-only signing key, not a production secret.
-        builder.UseSetting(
-            "Jwt:SigningKey",
-            Convert.ToBase64String(new byte[32]));
-    }
+    // Dedicated test-only signing key, not a production secret.
+    builder.UseSetting(
+        "Jwt:SigningKey",
+        Convert.ToBase64String(new byte[32]));
+
+    // The security tests perform many legitimate logins.
+    // Use a high limit here so unrelated tests do not
+    // interfere with each other.
+    //
+    // This setting applies only to this test server.
+    builder.UseSetting(
+        "RateLimiting:Login:PermitLimit",
+        "1000");
+}
 
     async Task IAsyncLifetime.DisposeAsync()
     {
