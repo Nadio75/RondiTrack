@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
@@ -26,6 +27,8 @@ using RondiTrack.Infrastructure;
 using RondiTrack.Services;
 using RondiTrack.Validation;
 using Scalar.AspNetCore;
+using System.Text.Json;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,14 +36,83 @@ var builder = WebApplication.CreateBuilder(args);
 // 1. Controllers and OpenAPI
 // --------------------------------------------------
 
-builder.Services.AddControllers(options =>
+builder.Services
+    .AddControllers(options =>
+    {
+        options.Filters.Add<ValidationFilter>();
+        options.Filters.Add<CorrelationProblemDetailsFilter>();
+    })
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.NumberHandling =
+            JsonNumberHandling.Strict;
+    });
+    builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
-    options.Filters.Add<ValidationFilter>();
-    options.Filters.Add<CorrelationProblemDetailsFilter>();
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var errors = new ModelStateDictionary();
+
+        foreach (var entry in context.ModelState)
+        {
+            var key = entry.Key;
+
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                var dot = key.LastIndexOf('.');
+
+                var prefix = dot >= 0
+                    ? key[..(dot + 1)]
+                    : string.Empty;
+
+                var property = dot >= 0
+                    ? key[(dot + 1)..]
+                    : key;
+
+                key = prefix +
+                    JsonNamingPolicy.CamelCase.ConvertName(property);
+            }
+
+            foreach (var error in entry.Value?.Errors
+                         ?? Enumerable.Empty<ModelError>())
+            {
+                errors.AddModelError(
+                    key,
+                    string.IsNullOrWhiteSpace(error.ErrorMessage)
+                        ? "The supplied value is invalid."
+                        : error.ErrorMessage);
+            }
+        }
+
+        var problem = new ValidationProblemDetails(errors)
+        {
+            Status = StatusCodes.Status400BadRequest,
+            Title = "One or more validation errors occurred."
+        };
+
+        return new ObjectResult(problem)
+        {
+            StatusCode = StatusCodes.Status400BadRequest,
+            ContentTypes = { "application/problem+json" }
+        };
+    };
 });
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddSchemaTransformer((schema, context, cancellationToken) =>
+    {
+        if (context.JsonTypeInfo.Type == typeof(decimal) ||
+            context.JsonTypeInfo.Type == typeof(decimal?))
+        {
+            schema.Type = Microsoft.OpenApi.JsonSchemaType.Number;
+            schema.Format = "double";
+            schema.Pattern = null;
+        }
 
+        return Task.CompletedTask;
+    });
+});
 // Only configured frontend origins may make credentialed browser requests.
 // Development uses http://localhost:3000; production defaults to none.
 var allowedOrigins = builder.Configuration
