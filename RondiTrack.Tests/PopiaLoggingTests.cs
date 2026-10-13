@@ -48,7 +48,7 @@ public class PopiaLoggingTests
 
         // 1. Register a dummy user.
         using var registration = await client.PostAsJsonAsync(
-            "/api/auth/register",
+            "/api/v1/auth/register",
             new
             {
                 name = "POPIA Test User",
@@ -63,7 +63,7 @@ public class PopiaLoggingTests
 
         // 2. Log in and collect the test-only tokens.
         using var login = await client.PostAsJsonAsync(
-            "/api/auth/login",
+            "/api/v1/auth/login",
             new
             {
                 email,
@@ -96,7 +96,7 @@ public class PopiaLoggingTests
         // 3. Refresh the session using the cookie.
         using var refreshRequest = new HttpRequestMessage(
             HttpMethod.Post,
-            "/api/auth/refresh");
+            "/api/v1/auth/refresh");
 
         refreshRequest.Headers.TryAddWithoutValidation(
             "Cookie",
@@ -121,7 +121,7 @@ public class PopiaLoggingTests
 
         // 4. Trigger an authentication failure.
         using var failedLogin = await client.PostAsJsonAsync(
-            "/api/auth/login",
+            "/api/v1/auth/login",
             new
             {
                 email,
@@ -179,7 +179,7 @@ public async Task Contribution_logs_do_not_expose_sensitive_values()
 
     // Register the Treasurer.
     using var registration = await client.PostAsJsonAsync(
-        "/api/auth/register",
+        "/api/v1/auth/register",
         new
         {
             name = "POPIA Contribution Tester",
@@ -201,7 +201,7 @@ public async Task Contribution_logs_do_not_expose_sensitive_values()
 
     // Log in and obtain a JWT.
     using var login = await client.PostAsJsonAsync(
-        "/api/auth/login",
+        "/api/v1/auth/login",
         new { email, password });
 
     Assert.Equal(HttpStatusCode.OK, login.StatusCode);
@@ -222,7 +222,7 @@ public async Task Contribution_logs_do_not_expose_sensitive_values()
 
     // Create a stokvel.
     using var stokvelResponse = await client.PostAsJsonAsync(
-        "/api/stokvels",
+        "/api/v1/stokvels",
         new
         {
             name = $"POPIA Stokvel {uniqueId}",
@@ -248,7 +248,7 @@ public async Task Contribution_logs_do_not_expose_sensitive_values()
 
     // Create a contribution cycle.
     using var cycleResponse = await client.PostAsJsonAsync(
-        $"/api/stokvels/{stokvelId}/cycles",
+        $"/api/v1/stokvels/{stokvelId}/cycles",
         new
         {
             period = "2026-10",
@@ -272,7 +272,7 @@ public async Task Contribution_logs_do_not_expose_sensitive_values()
 
     using var request = new HttpRequestMessage(
         HttpMethod.Post,
-        $"/api/stokvels/{stokvelId}/contributions");
+        $"/api/v1/stokvels/{stokvelId}/contributions");
 
     request.Headers.Add(
         "Idempotency-Key",

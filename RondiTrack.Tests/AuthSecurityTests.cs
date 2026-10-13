@@ -38,7 +38,7 @@ public class AuthSecurityTests
         string password = "SecurityTest123!")
     {
         var response = await client.PostAsJsonAsync(
-            "/api/auth/register",
+            "/api/v1/auth/register",
             new
             {
                 name = "Security Test User",
@@ -56,7 +56,7 @@ public class AuthSecurityTests
         string password = "SecurityTest123!")
     {
         return await client.PostAsJsonAsync(
-            "/api/auth/login",
+            "/api/v1/auth/login",
             new { email, password });
     }
 
@@ -226,7 +226,7 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
         var originalCookie = GetRefreshCookie(login);
 
         using var request = CookieRequest(
-            HttpMethod.Post, "/api/auth/refresh", originalCookie);
+            HttpMethod.Post, "/api/v1/auth/refresh", originalCookie);
 
         var refresh = await client.SendAsync(request);
 
@@ -257,7 +257,7 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
         var oldCookie = GetRefreshCookie(login);
 
         using var firstRequest = CookieRequest(
-            HttpMethod.Post, "/api/auth/refresh", oldCookie);
+            HttpMethod.Post, "/api/v1/auth/refresh", oldCookie);
 
         var firstRefresh = await client.SendAsync(firstRequest);
 
@@ -266,14 +266,14 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
         var newCookie = GetRefreshCookie(firstRefresh);
 
         using var reuseRequest = CookieRequest(
-            HttpMethod.Post, "/api/auth/refresh", oldCookie);
+            HttpMethod.Post, "/api/v1/auth/refresh", oldCookie);
 
         var reuse = await client.SendAsync(reuseRequest);
 
         Assert.Equal(HttpStatusCode.Unauthorized, reuse.StatusCode);
 
         using var latestRequest = CookieRequest(
-            HttpMethod.Post, "/api/auth/refresh", newCookie);
+            HttpMethod.Post, "/api/v1/auth/refresh", newCookie);
 
         var latest = await client.SendAsync(latestRequest);
 
@@ -294,14 +294,14 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
         var cookie = GetRefreshCookie(login);
 
         using var logoutRequest = CookieRequest(
-            HttpMethod.Post, "/api/auth/logout", cookie);
+            HttpMethod.Post, "/api/v1/auth/logout", cookie);
 
         var logout = await client.SendAsync(logoutRequest);
 
         Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
 
         using var refreshRequest = CookieRequest(
-            HttpMethod.Post, "/api/auth/refresh", cookie);
+            HttpMethod.Post, "/api/v1/auth/refresh", cookie);
 
         var refresh = await client.SendAsync(refreshRequest);
 
@@ -314,7 +314,7 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
         using var client = CreateClient();
 
         var response = await client.PostAsync(
-            "/api/auth/refresh", null);
+            "/api/v1/auth/refresh", null);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -325,7 +325,7 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
         var email = NewEmail();
 
         var registration = await client.PostAsJsonAsync(
-            "/api/auth/register",
+            "/api/v1/auth/register",
             new
             {
                 name = "Authorization Test User",
@@ -370,7 +370,7 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
         HttpClient client)
     {
         var response = await client.PostAsJsonAsync(
-            "/api/stokvels",
+            "/api/v1/stokvels",
             new
             {
                 name = $"Security Stokvel {Guid.NewGuid():N}",
@@ -391,7 +391,7 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
         using var client = CreateClient();
 
         var response = await client.GetAsync(
-            $"/api/stokvels/{Guid.NewGuid()}");
+            $"/api/v1/stokvels/{Guid.NewGuid()}");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Equal(
@@ -410,7 +410,7 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
         var stokvelId = await CreateStokvelAsync(client);
 
         var response = await client.GetAsync(
-            $"/api/stokvels/{stokvelId}");
+            $"/api/v1/stokvels/{stokvelId}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -429,7 +429,7 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
             stokvelId, userId, "Member");
 
         var response = await client.PutAsJsonAsync(
-            $"/api/stokvels/{stokvelId}",
+            $"/api/v1/stokvels/{stokvelId}",
             new
             {
                 name = "Unauthorized Update",
@@ -453,7 +453,7 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
             stokvelId, userId, "Treasurer");
 
         var response = await client.PutAsJsonAsync(
-            $"/api/stokvels/{stokvelId}",
+            $"/api/v1/stokvels/{stokvelId}",
             new
             {
                 name = "Treasurer Updated Stokvel",
@@ -483,13 +483,13 @@ public async Task Treasurer_cannot_delete_stokvel()
         stokvelId, userId, "Treasurer");
 
     var response = await client.DeleteAsync(
-        $"/api/stokvels/{stokvelId}");
+        $"/api/v1/stokvels/{stokvelId}");
 
     Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 
     // The stokvel must still exist.
     var getResponse = await client.GetAsync(
-        $"/api/stokvels/{stokvelId}");
+        $"/api/v1/stokvels/{stokvelId}");
 
     Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
 }
@@ -508,12 +508,12 @@ public async Task Chairperson_can_delete_stokvel()
         stokvelId, userId, "Chairperson");
 
     var response = await client.DeleteAsync(
-        $"/api/stokvels/{stokvelId}");
+        $"/api/v1/stokvels/{stokvelId}");
 
     Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
     var getResponse = await client.GetAsync(
-        $"/api/stokvels/{stokvelId}");
+        $"/api/v1/stokvels/{stokvelId}");
 
     Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
 }
@@ -538,7 +538,7 @@ public async Task Treasurer_cannot_add_member()
         await CreateAuthenticatedUserAsync(client);
 
     var response = await client.PostAsJsonAsync(
-        $"/api/stokvels/{stokvelId}/members",
+        $"/api/v1/stokvels/{stokvelId}/members",
         new { userId = newUserId });
 
     Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -563,7 +563,7 @@ public async Task Chairperson_can_add_member()
         await CreateAuthenticatedUserAsync(client);
 
     var response = await client.PostAsJsonAsync(
-        $"/api/stokvels/{stokvelId}/members",
+        $"/api/v1/stokvels/{stokvelId}/members",
         new { userId = newUserId });
 
     Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -573,7 +573,7 @@ private static async Task<Guid> CreateCycleAsync(
     Guid stokvelId)
 {
     var response = await client.PostAsJsonAsync(
-        $"/api/stokvels/{stokvelId}/cycles",
+        $"/api/v1/stokvels/{stokvelId}/cycles",
         new
         {
             period = "2026-10",
@@ -596,7 +596,7 @@ private static async Task<HttpResponseMessage> SubmitContributionAsync(
 {
     using var request = new HttpRequestMessage(
         HttpMethod.Post,
-        $"/api/stokvels/{stokvelId}/contributions");
+        $"/api/v1/stokvels/{stokvelId}/contributions");
 
     request.Headers.Add(
         "Idempotency-Key",

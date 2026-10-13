@@ -11,10 +11,10 @@ using RondiTrack.Models.Dtos;
 using RondiTrack.Helpers;
 using RondiTrack.Authorization;
 using System.Security.Claims;
+using RondiTrack.Common;
 
 [ApiController]
-[Route("api/stokvels")]
-public class StokvelsController : ControllerBase
+[Route(ApiRoutes.V1 + "/stokvels")]public class StokvelsController : ControllerBase
 {
     private readonly IStokvelStore _store;
     private readonly StokvelMembershipService _membershipService;
@@ -363,6 +363,8 @@ if (denied is not null)
     }
 
     [HttpPost("{id}/contributions")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(
+    RondiTrack.Common.RateLimitPolicies.Financial)]
     [EndpointSummary("Record a member's contribution for a cycle (idempotent)")]
     [EndpointDescription("""
         Records that a member has paid into one contribution cycle of this stokvel.
@@ -456,7 +458,7 @@ if (request.UserId != callerId)
         var response = await _contributionService.ExecuteAsync(id, idempotencyKey, request);
         return CreatedAtAction(nameof(GetById), new { id }, response);
     }
-    [HttpGet("{id}/cycles/{cycleId}/payout")]
+   [HttpGet("{id}/cycles/{cycleId}/payout")]
 [EndpointSummary("Get the payout for a contribution cycle")]
 [EndpointDescription("""
     Returns the payout recorded for the given contribution cycle, including the
@@ -483,6 +485,8 @@ if (denied is not null)
     return Ok(PayoutMapper.ToResponse(payout));
 }
 [HttpPut("{id}/cycles/{cycleId}/payout")]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(
+    RondiTrack.Common.RateLimitPolicies.Financial)]
 [EndpointSummary("Update a payout amount using optimistic concurrency")]
 [EndpointDescription("""
     Updates the payout amount.
@@ -512,8 +516,10 @@ if (denied is not null)
 }
 
     [HttpPost("{id}/cycles/{cycleId}/payout")]
-    [EndpointSummary("Process the next payout for a contribution cycle")]
-    [EndpointDescription("""
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(
+    RondiTrack.Common.RateLimitPolicies.Financial)]
+[EndpointSummary("Process the next payout for a contribution cycle")]
+[EndpointDescription("""
         Determines the next eligible recipient — the member who joined this stokvel earliest
         and has not yet received a payout from it — records a Payout for them, and marks the
         cycle as paid out. Both writes happen inside one database transaction: either both

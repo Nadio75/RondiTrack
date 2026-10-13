@@ -31,7 +31,7 @@ private readonly PostgresApiFactory _factory;    private readonly HttpClient _cl
     {
         var s = await _client.ArrangeMemberWithCycleAsync(_factory);
 
-        var response = await _client.PostAsync($"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout", null);
+        var response = await _client.PostAsync($"/api/v1/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout", null);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var payout = await response.Content.ReadFromJsonAsync<PayoutResponse>();
@@ -48,10 +48,10 @@ private readonly PostgresApiFactory _factory;    private readonly HttpClient _cl
     public async Task Processing_a_payout_twice_for_the_same_cycle_is_rejected_the_second_time()
     {
         var s = await _client.ArrangeMemberWithCycleAsync(_factory);
-        var first = await _client.PostAsync($"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout", null);
+        var first = await _client.PostAsync($"/api/v1/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout", null);
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
 
-        var second = await _client.PostAsync($"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout", null);
+        var second = await _client.PostAsync($"/api/v1/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout", null);
 
         Assert.NotEqual(HttpStatusCode.Created, second.StatusCode);
     }
@@ -64,7 +64,7 @@ private readonly PostgresApiFactory _factory;    private readonly HttpClient _cl
     public async Task A_failed_payout_leaves_no_partial_payout_or_cycle_status_change_behind()
     {
         var s = await _client.ArrangeMemberWithCycleAsync(_factory); // one member, one cycle
-        var firstPayout = await _client.PostAsync($"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout", null);
+        var firstPayout = await _client.PostAsync($"/api/v1/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout", null);
         Assert.Equal(HttpStatusCode.Created, firstPayout.StatusCode); // the one member is now paid
 
         // A second cycle, same stokvel, same single member — who has already
@@ -97,14 +97,14 @@ public async Task Updating_payout_with_stale_version_returns_409()
 
     // Create the payout.
     var createResponse = await _client.PostAsync(
-        $"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout",
+        $"/api/v1/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout",
         null);
 
     Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
 
     // HTTP GET obtains the original xmin/version token.
     var getResponse = await _client.GetAsync(
-        $"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout");
+        $"/api/v1/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout");
 
     Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
 
@@ -116,14 +116,14 @@ public async Task Updating_payout_with_stale_version_returns_409()
 
     // First update uses the token we just obtained.
     var firstUpdate = await _client.PutAsJsonAsync(
-        $"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout",
+        $"/api/v1/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout",
         new UpdatePayoutRequest(750m, original.Version));
 
     Assert.Equal(HttpStatusCode.OK, firstUpdate.StatusCode);
 
     // Second update deliberately reuses the OLD token.
     var staleUpdate = await _client.PutAsJsonAsync(
-        $"/api/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout",
+        $"/api/v1/stokvels/{s.Stokvel.Id}/cycles/{s.Cycle.Id}/payout",
         new UpdatePayoutRequest(900m, original.Version));
 
     Assert.Equal(HttpStatusCode.Conflict, staleUpdate.StatusCode);

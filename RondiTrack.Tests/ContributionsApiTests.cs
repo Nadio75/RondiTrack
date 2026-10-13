@@ -35,7 +35,7 @@ public class ContributionsApiTests
         Assert.Equal(s.User.Id, body.UserId);
         Assert.Equal(500m, body.Amount);
         Assert.Equal(s.Cycle.Id, body.ContributionCycleId);
-        Assert.EndsWith($"/api/stokvels/{s.Stokvel.Id}", response.Headers.Location!.ToString());
+        Assert.EndsWith($"/api/v1/stokvels/{s.Stokvel.Id}", response.Headers.Location!.ToString());
     }
 
     [Fact]

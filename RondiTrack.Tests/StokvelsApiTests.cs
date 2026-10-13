@@ -25,19 +25,19 @@ public StokvelsApiTests(PostgresApiFactory factory)
     [Fact]
     public async Task Creating_a_stokvel_returns_201_with_zero_members_and_a_location_and_it_can_be_fetched()
     {
-        var response = await _client.PostAsJsonAsync("/api/stokvels",
+        var response = await _client.PostAsJsonAsync("/api/v1/stokvels",
             new { name = "Happy Path Stokvel", contributionAmount = 500 });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var created = await response.Content.ReadFromJsonAsync<StokvelResponse>();
         Assert.Equal(0, created!.MemberCount);
-        Assert.EndsWith($"/api/stokvels/{created.Id}", response.Headers.Location!.ToString());
-        var denied = await _client.GetAsync($"/api/stokvels/{created.Id}");
+        Assert.EndsWith($"/api/v1/stokvels/{created.Id}", response.Headers.Location!.ToString());
+        var denied = await _client.GetAsync($"/api/v1/stokvels/{created.Id}");
         denied.AssertProblem(HttpStatusCode.NotFound);
 
         await _client.ArrangeChairpersonAsync(_factory, created.Id);
 
-        var fetched = await _client.GetFromJsonAsync<StokvelResponse>($"/api/stokvels/{created.Id}");
+        var fetched = await _client.GetFromJsonAsync<StokvelResponse>($"/api/v1/stokvels/{created.Id}");
 Assert.Equal(created.Id, fetched!.Id);
 Assert.Equal(created.Name, fetched.Name);
 Assert.Equal(created.ContributionAmount, fetched.ContributionAmount);
@@ -49,7 +49,7 @@ Assert.Equal(1, fetched.MemberCount);
     {
         var stokvel = await _client.CreateStokvelAsync();
 
-        var all = await _client.GetFromJsonAsync<List<StokvelResponse>>("/api/stokvels");
+        var all = await _client.GetFromJsonAsync<List<StokvelResponse>>("/api/v1/stokvels");
 
         Assert.Contains(all!, s => s.Id == stokvel.Id);
     }
@@ -63,7 +63,7 @@ public async Task Updating_a_stokvel_replaces_name_and_contribution_amount()
     await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
 
     var response = await _client.PutAsJsonAsync(
-        $"/api/stokvels/{stokvel.Id}",
+        $"/api/v1/stokvels/{stokvel.Id}",
         new { name = "Renamed Stokvel", contributionAmount = 750 });
 
     Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -82,8 +82,8 @@ public async Task Deleting_a_stokvel_returns_204_then_404_on_a_second_delete()
 
     await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
 
-    var first = await _client.DeleteAsync($"/api/stokvels/{stokvel.Id}");
-    var second = await _client.DeleteAsync($"/api/stokvels/{stokvel.Id}");
+    var first = await _client.DeleteAsync($"/api/v1/stokvels/{stokvel.Id}");
+    var second = await _client.DeleteAsync($"/api/v1/stokvels/{stokvel.Id}");
 
     Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
     second.AssertProblem(HttpStatusCode.NotFound);
@@ -97,7 +97,7 @@ public async Task Deleting_a_stokvel_returns_204_then_404_on_a_second_delete()
     [InlineData("Valid Name", -5)]
     public async Task Creating_a_stokvel_that_breaks_a_rule_returns_400(string name, int contributionAmount)
     {
-        var response = await _client.PostAsJsonAsync("/api/stokvels", new { name, contributionAmount });
+        var response = await _client.PostAsJsonAsync("/api/v1/stokvels", new { name, contributionAmount });
 
         response.AssertProblem(HttpStatusCode.BadRequest);
     }
@@ -105,7 +105,7 @@ public async Task Deleting_a_stokvel_returns_204_then_404_on_a_second_delete()
     [Fact]
     public async Task Fetching_a_stokvel_with_an_id_that_is_not_a_guid_returns_400()
     {
-        var response = await _client.GetAsync("/api/stokvels/not-a-guid");
+        var response = await _client.GetAsync("/api/v1/stokvels/not-a-guid");
 
         response.AssertProblem(HttpStatusCode.BadRequest);
     }
@@ -113,7 +113,7 @@ public async Task Deleting_a_stokvel_returns_204_then_404_on_a_second_delete()
     [Fact]
     public async Task Updating_with_an_invalid_body_returns_400_even_when_the_stokvel_does_not_exist()
     {
-        var response = await _client.PutAsJsonAsync($"/api/stokvels/{Guid.NewGuid()}",
+        var response = await _client.PutAsJsonAsync($"/api/v1/stokvels/{Guid.NewGuid()}",
             new { name = "", contributionAmount = -1 });
 
         response.AssertProblem(HttpStatusCode.BadRequest);
@@ -122,7 +122,7 @@ public async Task Deleting_a_stokvel_returns_204_then_404_on_a_second_delete()
     [Fact]
     public async Task Updating_a_stokvel_that_does_not_exist_returns_404()
     {
-        var response = await _client.PutAsJsonAsync($"/api/stokvels/{Guid.NewGuid()}",
+        var response = await _client.PutAsJsonAsync($"/api/v1/stokvels/{Guid.NewGuid()}",
             new { name = "Valid Name", contributionAmount = 500 });
 
         response.AssertProblem(HttpStatusCode.NotFound);
@@ -144,7 +144,7 @@ public async Task Adding_a_member_returns_204_and_raises_the_member_count_to_two
     Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
     var after = await _client.GetFromJsonAsync<StokvelResponse>(
-        $"/api/stokvels/{stokvel.Id}");
+        $"/api/v1/stokvels/{stokvel.Id}");
 
     Assert.Equal(2, after!.MemberCount);
 }
@@ -164,7 +164,7 @@ public async Task Adding_the_same_member_twice_returns_409_and_the_count_stays_a
     second.AssertProblem(HttpStatusCode.Conflict);
 
     var after = await _client.GetFromJsonAsync<StokvelResponse>(
-        $"/api/stokvels/{stokvel.Id}");
+        $"/api/v1/stokvels/{stokvel.Id}");
 
     Assert.Equal(2, after!.MemberCount);
 }

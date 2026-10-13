@@ -63,7 +63,7 @@ public class HealthAndCorrelationTests
         using var client = CreateClient();
 
         using var response =
-            await client.GetAsync("/api/stokvels");
+            await client.GetAsync("/api/v1/stokvels");
 
         Assert.Equal(
             HttpStatusCode.Unauthorized,
@@ -95,7 +95,7 @@ public class HealthAndCorrelationTests
         using var request =
             new HttpRequestMessage(
                 HttpMethod.Get,
-                "/api/stokvels");
+                "/api/v1/stokvels");
 
         request.Headers.TryAddWithoutValidation(
             "traceparent",
@@ -131,7 +131,7 @@ public class HealthAndCorrelationTests
 
         using var registerResponse =
             await client.PostAsJsonAsync(
-                "/api/auth/register",
+                "/api/v1/auth/register",
                 new
                 {
                     name = "Correlation Test User",
@@ -146,7 +146,7 @@ public class HealthAndCorrelationTests
 
         using var loginResponse =
             await client.PostAsJsonAsync(
-                "/api/auth/login",
+                "/api/v1/auth/login",
                 new
                 {
                     email,
@@ -175,7 +175,7 @@ public class HealthAndCorrelationTests
         using var request =
             new HttpRequestMessage(
                 HttpMethod.Get,
-                $"/api/stokvels/{Guid.NewGuid()}");
+                $"/api/v1/stokvels/{Guid.NewGuid()}");
 
         request.Headers.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue(

@@ -8,12 +8,12 @@ using RondiTrack.Domain;
 using RondiTrack.Mapping;
 using RondiTrack.Authorization;
 using Microsoft.AspNetCore.Authorization;
+using RondiTrack.Common;
 
 // Nested under a stokvel, since a cycle only ever makes sense in the context of one:
 // /api/stokvels/{stokvelId}/cycles
 [ApiController]
-[Route("api/stokvels/{stokvelId}/cycles")]
-public class ContributionCyclesController : ControllerBase
+[Route(ApiRoutes.V1 + "/stokvels/{stokvelId}/cycles")]public class ContributionCyclesController : ControllerBase
 {
     private readonly IStokvelStore _stokvelStore;
     private readonly IContributionCycleStore _cycleStore;

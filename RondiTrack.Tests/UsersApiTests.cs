@@ -21,15 +21,15 @@ public class UsersApiTests
     [Fact]
     public async Task Creating_a_user_returns_201_with_a_location_and_the_user_can_then_be_fetched()
     {
-        var response = await _client.PostAsJsonAsync("/api/users",
+        var response = await _client.PostAsJsonAsync("/api/v1/users",
             new { name = "Nomsa Khumalo", contactNumber = "0829998888" });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var created = await response.Content.ReadFromJsonAsync<UserResponse>();
         Assert.NotNull(created);
-        Assert.EndsWith($"/api/users/{created!.Id}", response.Headers.Location!.ToString());
+        Assert.EndsWith($"/api/v1/users/{created!.Id}", response.Headers.Location!.ToString());
 
-        var fetched = await _client.GetFromJsonAsync<UserResponse>($"/api/users/{created.Id}");
+        var fetched = await _client.GetFromJsonAsync<UserResponse>($"/api/v1/users/{created.Id}");
         Assert.Equal(created, fetched);
     }
 
@@ -38,7 +38,7 @@ public class UsersApiTests
     {
         var user = await _client.CreateUserAsync();
 
-        var users = await _client.GetFromJsonAsync<List<UserResponse>>("/api/users");
+        var users = await _client.GetFromJsonAsync<List<UserResponse>>("/api/v1/users");
 
         Assert.Contains(users!, u => u.Id == user.Id);
     }
@@ -48,7 +48,7 @@ public class UsersApiTests
     {
         var user = await _client.CreateUserAsync();
 
-        var response = await _client.PutAsJsonAsync($"/api/users/{user.Id}",
+        var response = await _client.PutAsJsonAsync($"/api/v1/users/{user.Id}",
             new { name = "Renamed User", contactNumber = "0711112222" });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -63,9 +63,9 @@ public class UsersApiTests
     {
         var user = await _client.CreateUserAsync();
 
-        var deleted = await _client.DeleteAsync($"/api/users/{user.Id}");
-        var fetched = await _client.GetAsync($"/api/users/{user.Id}");
-        var deletedAgain = await _client.DeleteAsync($"/api/users/{user.Id}");
+        var deleted = await _client.DeleteAsync($"/api/v1/users/{user.Id}");
+        var fetched = await _client.GetAsync($"/api/v1/users/{user.Id}");
+        var deletedAgain = await _client.DeleteAsync($"/api/v1/users/{user.Id}");
 
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
         fetched.AssertProblem(HttpStatusCode.NotFound);
@@ -77,7 +77,7 @@ public class UsersApiTests
     [Fact]
     public async Task Creating_a_user_with_a_contact_number_that_is_not_10_digits_returns_400_and_says_why()
     {
-        var response = await _client.PostAsJsonAsync("/api/users",
+        var response = await _client.PostAsJsonAsync("/api/v1/users",
             new { name = "Test User", contactNumber = "12345" });
 
         response.AssertProblem(HttpStatusCode.BadRequest);
@@ -87,7 +87,7 @@ public class UsersApiTests
     [Fact]
     public async Task Creating_a_user_with_a_blank_name_returns_400()
     {
-        var response = await _client.PostAsJsonAsync("/api/users",
+        var response = await _client.PostAsJsonAsync("/api/v1/users",
             new { name = "   ", contactNumber = "0821234567" });
 
         response.AssertProblem(HttpStatusCode.BadRequest);
@@ -97,7 +97,7 @@ public class UsersApiTests
     public async Task Updating_with_an_invalid_body_returns_400_even_when_the_user_does_not_exist()
     {
         // Validation runs before the lookup, exactly as the docs promise.
-        var response = await _client.PutAsJsonAsync($"/api/users/{Guid.NewGuid()}",
+        var response = await _client.PutAsJsonAsync($"/api/v1/users/{Guid.NewGuid()}",
             new { name = "", contactNumber = "abc" });
 
         response.AssertProblem(HttpStatusCode.BadRequest);
@@ -106,7 +106,7 @@ public class UsersApiTests
     [Fact]
     public async Task Fetching_a_user_with_an_id_that_is_not_a_guid_returns_400()
     {
-        var response = await _client.GetAsync("/api/users/not-a-guid");
+        var response = await _client.GetAsync("/api/v1/users/not-a-guid");
 
         response.AssertProblem(HttpStatusCode.BadRequest);
     }
@@ -116,7 +116,7 @@ public class UsersApiTests
     [Fact]
     public async Task Fetching_a_user_that_does_not_exist_returns_404()
     {
-        var response = await _client.GetAsync($"/api/users/{Guid.NewGuid()}");
+        var response = await _client.GetAsync($"/api/v1/users/{Guid.NewGuid()}");
 
         response.AssertProblem(HttpStatusCode.NotFound);
     }
@@ -124,7 +124,7 @@ public class UsersApiTests
     [Fact]
     public async Task Updating_a_user_that_does_not_exist_returns_404()
     {
-        var response = await _client.PutAsJsonAsync($"/api/users/{Guid.NewGuid()}",
+        var response = await _client.PutAsJsonAsync($"/api/v1/users/{Guid.NewGuid()}",
             new { name = "Valid Name", contactNumber = "0821234567" });
 
         response.AssertProblem(HttpStatusCode.NotFound);

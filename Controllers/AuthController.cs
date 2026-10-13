@@ -10,12 +10,12 @@ using RondiTrack.Domain;
 using RondiTrack.Infrastructure;
 using RondiTrack.Models;
 using RondiTrack.Services;
+using RondiTrack.Common;
 
 namespace RondiTrack.Controllers;
 
 [ApiController]
-[Route("api/auth")]
-public class AuthController : ControllerBase
+[Route(ApiRoutes.V1 + "/auth")]public class AuthController : ControllerBase
 {
     private const string RefreshCookieName = "ronditrack_refresh";
     private static readonly TimeSpan RefreshLifetime = TimeSpan.FromDays(7);
@@ -91,9 +91,11 @@ public class AuthController : ControllerBase
         });
     }
 
-    [AllowAnonymous]
-    [HttpPost("login")]
-    public async Task<IActionResult> Login(
+   [AllowAnonymous]
+[HttpPost("login")]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(
+    RondiTrack.Common.RateLimitPolicies.Login)]
+public async Task<IActionResult> Login(
         [FromBody] LoginRequest request)
     {
         var email = request.Email.Trim().ToLowerInvariant();
@@ -284,8 +286,8 @@ public class AuthController : ControllerBase
                 HttpOnly = true,
                 Secure = true,
                 SameSite = SameSiteMode.Strict,
-                Path = "/api/auth",
-                Expires = DateTimeOffset.UtcNow.Add(RefreshLifetime)
+Path = "/" + ApiRoutes.V1 + "/auth"  ,              
+Expires = DateTimeOffset.UtcNow.Add(RefreshLifetime)
             });
     }
 
@@ -298,7 +300,7 @@ public class AuthController : ControllerBase
                 HttpOnly = true,
                 Secure = true,
                 SameSite = SameSiteMode.Strict,
-                Path = "/api/auth"
+                Path = "/" + ApiRoutes.V1 + "/auth"
             });
     }
 }
