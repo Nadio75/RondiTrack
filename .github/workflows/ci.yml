@@ -30,7 +30,12 @@ jobs:
       - name: Build in Release mode
         run: dotnet build RondiTrack.slnx --configuration Release --no-restore
 
-      - name: Run all tests
+           - name: Run all tests
+        env:
+          ASPNETCORE_ENVIRONMENT: Testing
+          Jwt__Issuer: RondiTrack-CI
+          Jwt__Audience: RondiTrack-CI-Tests
+          Jwt__SigningKey: RondiTrack-CI-Only-Temporary-Test-Key-Not-For-Production-2026
         run: dotnet test RondiTrack.Tests/RondiTrack.Tests.csproj --configuration Release --no-build
 
       - name: Build Docker image
