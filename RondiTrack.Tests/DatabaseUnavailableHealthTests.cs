@@ -22,6 +22,8 @@ public class DatabaseUnavailableHealthTests
                 "Database=ronditrack_unavailable_test;" +
                 "Username=postgres;Password=postgres;" +
                 "Timeout=3");
+builder.UseSetting("CycleClosing:Enabled", "false");
+builder.UseSetting("Housekeeping:Enabled", "false");
 
             // Test-only JWT configuration is required
             // because Program.cs validates it at startup.

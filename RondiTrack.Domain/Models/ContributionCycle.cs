@@ -10,6 +10,9 @@ public class ContributionCycle
     public decimal TargetAmount { get; private set; }
     public DateTime CreatedAt { get; }
     public string Status { get; private set; } = "Open";
+public bool IsClosed { get; private set; }
+
+public DateTime? ClosedAtUtc { get; private set; }
     public Stokvel Stokvel { get; private set; } = null!;
         // Optimistic concurrency token – maps to PostgreSQL xmin (no real column)
     public uint xmin { get; set; }
@@ -50,4 +53,18 @@ public class ContributionCycle
             throw new InvalidOperationException("This cycle has already been paid out.");
         Status = "PaidOut";
     }
+public void Close(DateTime closedAtUtc)
+{
+    if (IsClosed)
+        throw new InvalidOperationException(
+            "This contribution cycle is already closed.");
+
+    if (closedAtUtc.Kind != DateTimeKind.Utc)
+        throw new ArgumentException(
+            "The closing time must be UTC.",
+            nameof(closedAtUtc));
+
+    IsClosed = true;
+    ClosedAtUtc = closedAtUtc;
+}
 }

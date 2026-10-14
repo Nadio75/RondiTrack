@@ -2346,3 +2346,286 @@ The integration tests also passed while the local PostgreSQL development server 
 **Final verified test result: 154 passed, 0 failed, 0 skipped.**
 
 The RondiTrack backend now has a stronger foundation for frontend development and integration.
+
+# Assignment 6.4 — Shipped, Scheduled and Handed Over
+
+## 1. Assignment Overview
+
+Assignment 6.4 focuses on preparing RondiTrack for deployment and ongoing operation.
+
+Earlier assignments established the API, PostgreSQL database, authentication, authorization, observability, frontend integration, and automated tests.
+
+This assignment builds on that foundation by introducing scheduled financial processing, database housekeeping, containerized deployment, and operational handover documentation.
+
+The work includes:
+
+1. Automatically closing contribution cycles.
+2. Recording arrears for missed contributions.
+3. Running scheduled background services.
+4. Cleaning up old refresh-token records.
+5. Packaging the application using Docker.
+6. Automatically applying database migrations during deployment.
+7. Verifying the application through health checks and automated tests.
+8. Documenting deployment instructions and known limitations.
+
+---
+
+## 2. Monthly Contribution-Cycle Closing
+
+### What was required?
+
+RondiTrack needed a way to close contribution cycles automatically according to a configured monthly schedule.
+
+A stokvel is a savings group whose members contribute money according to agreed rules.
+
+At the end of a contribution period, the system needs to identify members who have not contributed and record their outstanding obligations.
+
+### What we implemented
+
+The implementation includes:
+
+- `RondiTrack.Domain/CycleClosingSchedule.cs`
+- `Services/CycleClosingService.cs`
+- `Services/CycleClosingBackgroundService.cs`
+- Updates to `ContributionCycle.cs` and `Stokvels.cs`
+
+`CycleClosingSchedule` contains the rules for determining when a contribution cycle is due to close.
+
+`CycleClosingService` performs the actual closing operation and records outstanding contributions.
+
+`CycleClosingBackgroundService` runs periodically to check for cycles that need to be closed.
+
+The system uses a configurable closing day for each stokvel.
+
+### Why we did this
+
+Without automatic closing, an administrator would need to check contribution periods manually.
+
+That could result in forgotten periods, inconsistent records, and delays in identifying unpaid contributions.
+
+Automatic closing makes the process more consistent and reduces manual work.
+
+### Reliability safeguards
+
+The closing implementation includes safeguards for:
+
+- Preventing repeated closing of the same cycle.
+- Handling missed closing periods.
+- Using PostgreSQL transactions and locking to protect concurrent processing.
+- Recording closing state in the database.
+
+These safeguards are important because scheduled jobs may restart or run again after interruptions.
+
+---
+
+## 3. Contribution Arrears
+
+### What was required?
+
+The system needed to track contributions that members failed to make before a cycle closed.
+
+An *arrear* is money that should already have been paid but remains outstanding.
+
+### What we implemented
+
+A new domain model was added:
+
+`RondiTrack.Domain/Models/ContributionArrear.cs`
+
+The database was updated to support arrears and contribution-cycle closing state.
+
+The relevant EF Core migrations are:
+
+- `20261014160151_AddContributionArrears`
+- `20261014163221_AddContributionCycleClosingState`
+- `20261014164918_AddStokvelClosingDay`
+- `20261014165426_SyncStokvelClosingDayConstraint`
+
+### Why we did this
+
+Without arrears tracking, a missed contribution could be difficult to distinguish from a contribution that was never expected.
+
+Recording arrears preserves the financial history of the stokvel and helps identify outstanding obligations.
+
+---
+
+## 4. Scheduled Database Housekeeping
+
+### What was required?
+
+The application needed routine maintenance to prevent old authentication records from accumulating indefinitely.
+
+### What we implemented
+
+The following services were added:
+
+- `Services/DatabaseHousekeepingService.cs`
+- `Services/DatabaseHousekeepingBackgroundService.cs`
+
+The housekeeping process removes refresh-token records that have been expired for more than 30 days.
+
+It runs periodically using configurable application settings.
+
+### Why we did this
+
+Refresh tokens support user sessions and authentication.
+
+Over time, expired records can accumulate in PostgreSQL.
+
+Removing sufficiently old expired tokens helps control database growth and reduces the amount of unnecessary authentication data retained.
+
+### Important limitation
+
+This housekeeping process does not replace a complete data-retention policy.
+
+Other stored records, including financial and idempotency data, may require separate retention rules.
+
+---
+
+## 5. Docker Deployment
+
+### What was required?
+
+The application needed a reproducible way to run the API and PostgreSQL without manually configuring every component on a new machine.
+
+### What we implemented
+
+RondiTrack uses:
+
+- `Dockerfile` to build the application and migration images.
+- `compose.yaml` to define the services.
+- `.env.example` to show the required environment variable names.
+
+Docker Compose defines three services:
+
+| Service | Purpose |
+|---|---|
+| `db` | Runs PostgreSQL 17 |
+| `migrate` | Applies EF Core database migrations |
+| `api` | Runs the RondiTrack ASP.NET Core API |
+
+### Startup order
+
+Docker Compose starts PostgreSQL and waits for its health check.
+
+The migration container then applies outstanding EF Core migrations.
+
+Only after the migration container completes successfully does the API start.
+
+This prevents the application from starting against an outdated database schema.
+
+### Why we did this
+
+A developer deploying the application should not have to remember a separate manual database migration command.
+
+The deployment configuration makes startup more repeatable and reduces the risk of missing a database update.
+
+---
+
+## 6. Running RondiTrack with Docker
+
+### Prerequisites
+
+Install:
+
+- Docker Desktop with Docker Compose support.
+- Git, if cloning the repository.
+
+.NET SDK is not required on the host machine for the Docker-only deployment.
+
+### Step 1 — Clone the repository
+
+```powershell
+git clone https://github.com/Nadio75/RondiTrack.git
+cd RondiTrack
+git checkout assignment-6.4
+```
+
+The branch must be pushed to GitHub before these instructions can be used from a fresh clone.
+
+### Step 2 — Create the environment file
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+Configure the following values:
+
+```dotenv
+POSTGRES_PASSWORD=
+JWT_ISSUER=
+JWT_AUDIENCE=
+JWT_SIGNING_KEY=
+```
+
+Use a strong, unique PostgreSQL password.
+
+The JWT signing key must be a cryptographically secure, Base64-encoded key compatible with the application's validation requirements.
+
+Do not commit `.env` or production secrets to Git.
+
+### Step 3 — Start the application
+
+```powershell
+docker compose up -d --build
+```
+
+Docker Compose builds the images, starts PostgreSQL, runs outstanding database migrations, and starts the API.
+
+### Step 4 — Check container status
+
+```powershell
+docker compose ps -a
+```
+
+Expected results:
+
+- PostgreSQL: healthy.
+- Migration container: exited successfully with code 0.
+- API: running.
+
+### Step 5 — Verify the health endpoints
+
+```powershell
+curl.exe -i http://localhost:8080/health/live
+curl.exe -i http://localhost:8080/health/ready
+```
+
+Both endpoints should return HTTP 200 when the application and PostgreSQL are healthy.
+
+The `/health/live` endpoint checks application liveness.
+
+The `/health/ready` endpoint checks readiness, including database connectivity.
+
+### Step 6 — View logs
+
+```powershell
+docker compose logs api --tail 100
+docker compose logs migrate --tail 100
+docker compose logs db --tail 100
+```
+
+### Step 7 — Stop the application
+
+```powershell
+docker compose down
+```
+
+This stops and removes the Compose containers while preserving the named PostgreSQL data volume.
+
+**Warning:** Do not use `docker compose down -v` unless you intentionally want to delete the database volume and its stored data.
+
+---
+
+## 7. EF Core Migration Bundle
+
+The Dockerfile creates a self-contained Linux EF Core migration executable using EF Core 10.0.12.
+
+The migration executable is packaged into a dedicated Docker image.
+
+During deployment, the migration container reads its PostgreSQL connection configuration from environment variables supplied by Docker Compose.
+
+The migration bundle uses dummy build-time configuration values because the application validates JWT settings when EF Core constructs the database context.
+
+Real production secrets are not required to

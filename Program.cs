@@ -243,8 +243,9 @@ builder.Services.AddOpenTelemetry()
                     !context.Request.Path.StartsWithSegments(
                         "/health");
             })
-            .AddSource("Npgsql")
-            .AddSource(PayoutService.ActivitySourceName);
+           .AddSource("Npgsql")
+.AddSource(PayoutService.ActivitySourceName)
+.AddSource(CycleClosingService.ActivitySourceName);
 
         if (enableOtlpExport)
         {
@@ -430,6 +431,21 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<PayoutService>();
 builder.Services.AddScoped<StokvelMembershipService>();
 builder.Services.AddScoped<RecordContributionService>();
+builder.Services.AddScoped<CycleClosingService>();
+builder.Services.AddScoped<DatabaseHousekeepingService>();
+if (builder.Configuration.GetValue("Housekeeping:Enabled", true))
+{
+    builder.Services.AddHostedService<DatabaseHousekeepingBackgroundService>();
+}
+
+if (builder.Configuration.GetValue(
+        "CycleClosing:Enabled", true))
+{
+    builder.Services.AddHostedService<CycleClosingBackgroundService>();
+}
+builder.Services.AddScoped<CycleClosingService>();
+
+
 
 builder.Services.AddScoped<PasswordHasher<User>>();
 builder.Services.AddSingleton(TimeProvider.System);

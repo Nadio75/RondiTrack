@@ -54,14 +54,53 @@ namespace RondiTrack.Infrastructure.Migrations
                     b.ToTable("Contributions");
                 });
 
+            modelBuilder.Entity("RondiTrack.Domain.ContributionArrear", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("AmountCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ContributionCycleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("RecordedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("StokvelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContributionCycleId", "UserId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "StokvelId");
+
+                    b.ToTable("ContributionArrears");
+                });
+
             modelBuilder.Entity("RondiTrack.Domain.ContributionCycle", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsClosed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("Period")
                         .IsRequired()
@@ -177,6 +216,11 @@ namespace RondiTrack.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int>("ClosingDayOfMonth")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(25);
+
                     b.Property<decimal>("ContributionAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
@@ -194,7 +238,10 @@ namespace RondiTrack.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Stokvels");
+                    b.ToTable("Stokvels", t =>
+                        {
+                            t.HasCheckConstraint("CK_Stokvels_ClosingDayOfMonth", "\"ClosingDayOfMonth\" BETWEEN 1 AND 31");
+                        });
                 });
 
             modelBuilder.Entity("RondiTrack.Domain.StokvelMember", b =>
@@ -263,6 +310,21 @@ namespace RondiTrack.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Member");
+                });
+
+            modelBuilder.Entity("RondiTrack.Domain.ContributionArrear", b =>
+                {
+                    b.HasOne("RondiTrack.Domain.ContributionCycle", null)
+                        .WithMany()
+                        .HasForeignKey("ContributionCycleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RondiTrack.Domain.StokvelMember", null)
+                        .WithMany()
+                        .HasForeignKey("UserId", "StokvelId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("RondiTrack.Domain.ContributionCycle", b =>
