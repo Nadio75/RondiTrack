@@ -20,7 +20,6 @@ COPY Exceptions/ Exceptions/
 COPY Health/ Health/
 COPY Helpers/ Helpers/
 COPY Mapping/ Mapping/
-COPY Migrations/ Migrations/
 COPY Models/ Models/
 COPY Properties/ Properties/
 COPY Services/ Services/
