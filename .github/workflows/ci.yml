@@ -1,0 +1,43 @@
+
+name: RondiTrack CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-test-docker:
+    name: Build, Test and Docker
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore RondiTrack.slnx
+
+      - name: Build in Release mode
+        run: dotnet build RondiTrack.slnx --configuration Release --no-restore
+
+      - name: Run all tests
+        env:
+          ASPNETCORE_ENVIRONMENT: Testing
+          Jwt__Issuer: RondiTrack-CI
+          Jwt__Audience: RondiTrack-CI-Tests
+          Jwt__SigningKey: DONJR5ApVrtgpQgw28ILhGMsvzD5NKSn6gz4ODCZdy873qdUeYiUbnZ/sbTUrzsS
+          Cors__AllowedOrigins__0: http://localhost:3000
+        run: dotnet test RondiTrack.Tests/RondiTrack.Tests.csproj --configuration Release --no-build
+
+      - name: Build Docker image
+        run: docker build -t ronditrack-api:ci .

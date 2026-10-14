@@ -101,7 +101,11 @@ public async Task EnsureMembershipAsync(
         builder.UseSetting(
             "ConnectionStrings:RondiTrack",
             _container.GetConnectionString());
+    // Prevent the automatic scheduler from running before
+    // the test database migrations have completed.
+    builder.UseSetting("CycleClosing:Enabled", "false");
 
+builder.UseSetting("Housekeeping:Enabled", "false");
         builder.ConfigureTestServices(services =>
 {
     if (UseRealAuthentication)

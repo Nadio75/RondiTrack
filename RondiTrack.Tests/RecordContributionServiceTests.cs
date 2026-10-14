@@ -120,6 +120,77 @@ public class RecordContributionServiceTests
 
     // ---------- Duplicate-contribution rule ----------
 
+    // ---------- Closed-cycle rule ----------
+
+    [Fact]
+    public async Task A_closed_cycle_rejects_a_new_contribution()
+    {
+        var s = await ArrangeMemberWithCycleAsync();
+
+        // Simulate the scheduler closing the contribution cycle.
+        s.Cycle.Close(DateTime.UtcNow);
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() =>
+            _service.ExecuteAsync(
+                s.Stokvel.Id,
+                "closed-cycle-key-1",
+                RequestFor(s)));
+
+        Assert.Contains("closed", exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+
+        // A rejected request must not create a contribution.
+        Assert.Equal(0, await ContributionCountAsync());
+    }
+
+    [Fact]
+    public async Task A_successful_contribution_can_be_replayed_after_cycle_closes()
+    {
+        var s = await ArrangeMemberWithCycleAsync();
+        var request = RequestFor(s);
+
+        // First contribution succeeds while the cycle is open.
+        var first = await _service.ExecuteAsync(
+            s.Stokvel.Id,
+            "closed-cycle-key-2",
+            request);
+
+        // The cycle closes after the contribution was recorded.
+        s.Cycle.Close(DateTime.UtcNow);
+
+        // Same key and same request must return the original result.
+        var replay = await _service.ExecuteAsync(
+            s.Stokvel.Id,
+            "closed-cycle-key-2",
+            request);
+
+        Assert.Equal(first, replay);
+        Assert.Equal(1, await ContributionCountAsync());
+    }
+
+    [Fact]
+    public async Task Changing_a_request_after_cycle_closes_rejects_key_reuse()
+    {
+        var s = await ArrangeMemberWithCycleAsync();
+
+        await _service.ExecuteAsync(
+            s.Stokvel.Id,
+            "closed-cycle-key-3",
+            RequestFor(s, amount: 500m));
+
+        s.Cycle.Close(DateTime.UtcNow);
+
+        // The same key cannot be reused with a different amount.
+        await Assert.ThrowsAsync<IdempotencyConflictException>(() =>
+            _service.ExecuteAsync(
+                s.Stokvel.Id,
+                "closed-cycle-key-3",
+                RequestFor(s, amount: 600m)));
+
+        Assert.Equal(1, await ContributionCountAsync());
+    }
+
+
     [Fact]
     public async Task A_member_who_already_paid_a_cycle_cannot_pay_it_again_with_a_new_key()
     {

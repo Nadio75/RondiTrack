@@ -71,6 +71,9 @@ public sealed class RealJwtApiFactory
     builder.UseSetting(
         "ConnectionStrings:RondiTrack",
         _container.GetConnectionString());
+    builder.UseSetting("CycleClosing:Enabled", "false");
+builder.UseSetting("Housekeeping:Enabled", "false");
+
 
     builder.UseSetting("Jwt:Issuer", "RondiTrackSecurityTests");
     builder.UseSetting("Jwt:Audience", "RondiTrackSecurityTests");

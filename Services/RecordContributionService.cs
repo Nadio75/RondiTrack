@@ -83,6 +83,13 @@ public class RecordContributionService
             throw new NotFoundException(
                 "This contribution cycle does not exist for this stokvel.");
         }
+// A closed cycle no longer accepts new contributions.
+// Idempotent replays are handled earlier in this method.
+if (cycle.IsClosed)
+{
+    throw new ConflictException(
+        "This contribution cycle is closed and no longer accepts contributions.");
+}
 
         var duplicate = await _contributionStore.FindAsync(
             stokvelId,

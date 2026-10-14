@@ -12,6 +12,9 @@ public class Stokvel
 
     // decimal, not float or double, because this is money. 
     public decimal ContributionAmount { get; private set; }
+// The calendar day when this stokvel's monthly cycle ends.
+// The scheduler interprets this in Africa/Johannesburg time.
+public int ClosingDayOfMonth { get; private set; } = 25;
 
     // This is the REAL list of member user IDs, kept private.
     // "Private" here is doing important work: no outside code can reach in
@@ -110,4 +113,15 @@ public void LoadMembers(IEnumerable<Guid> memberIds)    {
 
         ContributionAmount = newAmount;
     }
+public void UpdateClosingDayOfMonth(int closingDay)
+{
+    if (closingDay < 1 || closingDay > 31)
+    {
+        throw new ArgumentOutOfRangeException(
+            nameof(closingDay),
+            "Closing day must be between 1 and 31.");
+    }
+
+    ClosingDayOfMonth = closingDay;
+}
 }
