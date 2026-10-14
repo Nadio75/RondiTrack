@@ -35,7 +35,7 @@ jobs:
           ASPNETCORE_ENVIRONMENT: Testing
           Jwt__Issuer: RondiTrack-CI
           Jwt__Audience: RondiTrack-CI-Tests
-          Jwt__SigningKey: RondiTrack-CI-Only-Temporary-Test-Key-Not-For-Production-2026
+          Jwt__SigningKey: DONJR5ApVrtgpQgw28ILhGMsvzD5NKSn6gz4ODCZdy873qdUeYiUbnZ/sbTUrzsS
         run: dotnet test RondiTrack.Tests/RondiTrack.Tests.csproj --configuration Release --no-build
 
       - name: Build Docker image
