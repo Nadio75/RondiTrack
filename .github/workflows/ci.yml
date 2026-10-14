@@ -36,6 +36,7 @@ jobs:
           Jwt__Issuer: RondiTrack-CI
           Jwt__Audience: RondiTrack-CI-Tests
           Jwt__SigningKey: DONJR5ApVrtgpQgw28ILhGMsvzD5NKSn6gz4ODCZdy873qdUeYiUbnZ/sbTUrzsS
+          Cors__AllowedOrigins__0: http://localhost:3000
         run: dotnet test RondiTrack.Tests/RondiTrack.Tests.csproj --configuration Release --no-build
 
       - name: Build Docker image
