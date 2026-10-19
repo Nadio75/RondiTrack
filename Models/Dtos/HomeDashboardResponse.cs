@@ -1,3 +1,4 @@
+
 namespace RondiTrack.Models.Dtos;
 
 public sealed record HomeDashboardResponse(
@@ -8,7 +9,10 @@ public sealed record HomeStokvelResponse(
     string Name,
     string Role,
     string ContributionAmount,
-    HomeCycleResponse? CurrentCycle);
+    HomeCycleResponse? CurrentCycle)
+{
+    public long ContributionAmountCents { get; init; }
+}
 
 public sealed record HomeCycleResponse(
     Guid CycleId,
@@ -16,4 +20,9 @@ public sealed record HomeCycleResponse(
     string Status,
     bool HasPaid,
     string AmountOwed,
-    DateTime? NextPayoutDate);
+    DateTime? NextPayoutDate)
+{
+    public long PaidCents { get; init; }
+    public long OwedCents { get; init; }
+    public DateTime? DueAtUtc { get; init; }
+}

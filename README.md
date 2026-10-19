@@ -2629,3 +2629,95 @@ During deployment, the migration container reads its PostgreSQL connection confi
 The migration bundle uses dummy build-time configuration values because the application validates JWT settings when EF Core constructs the database context.
 
 Real production secrets are not required to
+
+## Frontend — Assignment 7.1
+
+### Overview
+
+The RondiTrack frontend is a React 19 application built with Vite and TypeScript. Assignment 7.1 introduces two reusable components:
+
+- **StokvelCard:** Displays a stokvel's name, the user's membership role, contribution amount, current cycle, payment summary and closing deadline.
+- **ContributionCard:** Displays a member's contribution amount and recorded timestamp, with demonstration support for Pending, Paid and Confirmed status labels.
+
+The frontend currently uses sample data. Authentication and live API integration are not part of this demonstration.
+
+### Requirements
+
+- Node.js 24
+- npm
+- Docker Desktop for running the backend API
+- Backend OpenAPI endpoint available at `http://localhost:8080/openapi/v1.json`
+
+### Running the frontend
+
+From the repository root:
+
+```powershell
+cd web
+npm.cmd ci
+npm.cmd run dev
+```
+
+Open `http://localhost:3000`.
+
+On systems where PowerShell permits npm scripts directly, `npm` may be used instead of `npm.cmd`.
+
+### Generating API types
+
+Start the backend in Development mode:
+
+```powershell
+docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+```
+
+Then run:
+
+```powershell
+cd web
+npm.cmd run generate:api
+```
+
+The generated TypeScript definitions are stored in `web/src/api/schema.d.ts` and should be committed to Git.
+
+Do not manually edit this generated file.
+
+### Running quality checks
+
+```powershell
+cd web
+npm.cmd run typecheck
+npm.cmd run lint
+npx.cmd vitest run
+npm.cmd run build
+```
+
+### Project structure
+
+| Path | Purpose |
+|---|---|
+| `src/api/schema.d.ts` | Generated OpenAPI TypeScript definitions |
+| `src/api/types.ts` | Convenient aliases for generated API types |
+| `src/components/StokvelCard.tsx` | Stokvel summary component |
+| `src/components/ContributionCard.tsx` | Contribution display component |
+| `src/data/sample.ts` | Fictional demonstration data |
+| `src/lib/money.ts` | Formats integer cents as South African rand |
+| `src/lib/apiMoney.ts` | Validates and converts API integer-cent values |
+| `src/lib/dates.ts` | Formats timestamps in South African Standard Time |
+
+### Important implementation details
+
+**Money:** Dashboard amounts are represented as integer cents to avoid floating-point rounding problems. The existing contribution-list API still returns decimal rand amounts, which the component converts for display.
+
+**Dates:** UTC timestamps are displayed using the `Africa/Johannesburg` timezone. This includes timestamps that cross into the next calendar day in South Africa.
+
+**Roles:** The Treasurer-only placeholder is displayed according to the role supplied for the individual stokvel. Hiding a button is a user-interface decision, not an authorization or security mechanism.
+
+**Statuses:** Pending, Paid and Confirmed are demonstration labels only. The current backend does not yet implement a separate payment confirmation lifecycle.
+
+**Payout dates:** An unavailable scheduled payout date is displayed as "Not scheduled" rather than inventing a date.
+
+### Testing
+
+The frontend includes 15 passing unit tests covering money formatting, API amount validation and timezone conversion.
+
+The backend dashboard integration tests also pass, covering authentication, membership isolation, role information and payment summaries.

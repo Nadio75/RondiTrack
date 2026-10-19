@@ -98,13 +98,14 @@ public sealed class HomeDashboardTests :
 
         Assert.Equal("Chairperson", firstHome.Role);
         Assert.Equal("500.00", firstHome.ContributionAmount);
+        Assert.Equal(50000L, firstHome.ContributionAmountCents);
 
         var secondHome = Assert.Single(
             home.Stokvels, s => s.StokvelId == second.Id);
 
         Assert.Equal("Member", secondHome.Role);
         Assert.Equal("750.00", secondHome.ContributionAmount);
-
+        Assert.Equal(75000L, secondHome.ContributionAmountCents);
         Assert.DoesNotContain(
             home.Stokvels,
             s => s.StokvelId == unrelated.Id);
@@ -165,6 +166,12 @@ public sealed class HomeDashboardTests :
             Assert.Equal(
                 "500.00",
                 stokvel.CurrentCycle.AmountOwed);
+                Assert.Equal(0L, stokvel.CurrentCycle.PaidCents);
+Assert.Equal(50000L, stokvel.CurrentCycle.OwedCents);
+Assert.NotNull(stokvel.CurrentCycle.DueAtUtc);
+Assert.Equal(
+    DateTimeKind.Utc,
+    stokvel.CurrentCycle.DueAtUtc.Value.Kind);
             Assert.Null(stokvel.CurrentCycle.NextPayoutDate);
         }
 
@@ -201,6 +208,8 @@ public sealed class HomeDashboardTests :
             Assert.Equal(
                 "0.00",
                 stokvel.CurrentCycle.AmountOwed);
+                Assert.Equal(50000L, stokvel.CurrentCycle.PaidCents);
+Assert.Equal(0L, stokvel.CurrentCycle.OwedCents);
         }
     }
 }
