@@ -29,6 +29,16 @@ public sealed class MeController : ControllerBase
         _timeProvider = timeProvider;
     }
 
+
+private static long ToCents(decimal amount)
+{
+    return checked((long)decimal.Round(
+        amount * 100m,
+        0,
+        MidpointRounding.AwayFromZero));
+}
+
+
     [HttpGet("home")]
     [EndpointSummary("Get the authenticated user's home dashboard")]
     [ProducesResponseType<HomeDashboardResponse>(
@@ -56,8 +66,8 @@ public sealed class MeController : ControllerBase
                 m.StokvelId,
                 m.Role,
                 Name = m.Stokvel.Name,
-                m.Stokvel.ContributionAmount
-            })
+m.Stokvel.ContributionAmount,
+m.Stokvel.ClosingDayOfMonth            })
             .OrderBy(m => m.Name)
             .ThenBy(m => m.StokvelId)
             .ToListAsync(cancellationToken);
@@ -112,46 +122,72 @@ public sealed class MeController : ControllerBase
 
         var results = new List<HomeStokvelResponse>();
 
-        foreach (var membership in memberships)
+
+foreach (var membership in memberships)
+{
+    HomeCycleResponse? currentCycle = null;
+
+    if (currentCycles.TryGetValue(
+        membership.StokvelId,
+        out var cycle))
+    {
+        var paidAmount = callerContributions
+            .Where(c =>
+                c.StokvelId == membership.StokvelId &&
+                c.ContributionCycleId == cycle.Id)
+            .Sum(c => c.Amount);
+
+        var hasPaid = paidAmount > 0;
+
+        var amountOwed = Math.Max(
+            0m,
+            membership.ContributionAmount - paidAmount);
+
+        DateTime? dueAtUtc = null;
+
+        if (DateTime.TryParseExact(
+            cycle.Period,
+            "yyyy-MM",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var period))
         {
-            HomeCycleResponse? currentCycle = null;
-
-            if (currentCycles.TryGetValue(
-                membership.StokvelId,
-                out var cycle))
-            {
-                var paidAmount = callerContributions
-                    .Where(c =>
-                        c.StokvelId == membership.StokvelId &&
-                        c.ContributionCycleId == cycle.Id)
-                    .Sum(c => c.Amount);
-
-                var hasPaid = paidAmount > 0;
-
-                var amountOwed = Math.Max(
-                    0m,
-                    membership.ContributionAmount - paidAmount);
-
-                currentCycle = new HomeCycleResponse(
-                    cycle.Id,
-                    cycle.Period,
-                    cycle.Status,
-                    hasPaid,
-                    amountOwed.ToString(
-                        "0.00",
-                        CultureInfo.InvariantCulture),
-                    null);
-            }
-
-            results.Add(new HomeStokvelResponse(
-                membership.StokvelId,
-                membership.Name,
-                membership.Role,
-                membership.ContributionAmount.ToString(
-                    "0.00",
-                    CultureInfo.InvariantCulture),
-                currentCycle));
+            dueAtUtc = CycleClosingSchedule.GetClosingInstantUtc(
+                period.Year,
+                period.Month,
+                membership.ClosingDayOfMonth);
         }
+
+        currentCycle = new HomeCycleResponse(
+            cycle.Id,
+            cycle.Period,
+            cycle.Status,
+            hasPaid,
+            amountOwed.ToString(
+                "0.00",
+                CultureInfo.InvariantCulture),
+            null)
+        {
+            PaidCents = ToCents(paidAmount),
+            OwedCents = ToCents(amountOwed),
+            DueAtUtc = dueAtUtc
+        };
+    }
+
+    results.Add(new HomeStokvelResponse(
+        membership.StokvelId,
+        membership.Name,
+        membership.Role,
+        membership.ContributionAmount.ToString(
+            "0.00",
+            CultureInfo.InvariantCulture),
+        currentCycle)
+    {
+        ContributionAmountCents =
+            ToCents(membership.ContributionAmount)
+    });
+}
+
 
         return Ok(new HomeDashboardResponse(results));
     }
