@@ -4,6 +4,7 @@ namespace RondiTrack.Models.Dtos;
 public sealed record HomeDashboardResponse(
     IReadOnlyList<HomeStokvelResponse> Stokvels);
 
+
 public sealed record HomeStokvelResponse(
     Guid StokvelId,
     string Name,
@@ -12,6 +13,8 @@ public sealed record HomeStokvelResponse(
     HomeCycleResponse? CurrentCycle)
 {
     public long ContributionAmountCents { get; init; }
+
+    public long PersonalArrearsCents { get; init; }
 }
 
 public sealed record HomeCycleResponse(

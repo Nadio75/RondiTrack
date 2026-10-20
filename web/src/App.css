@@ -1,6 +1,8 @@
 
 .app-container {
-  max-width: 1100px;
+  width: 100%;
+  max-width: 1200px;
+  min-width: 0;
   margin: 0 auto;
   padding: 32px 20px;
 }
@@ -9,72 +11,22 @@
   margin-bottom: 36px;
 }
 
-.page-header h1 {
-  margin-bottom: 8px;
-}
-
 .demo-notice {
-  font-size: 0.9rem;
-  color: #58677a;
-}
-
-section {
-  margin-bottom: 32px;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
 }
 
 .card-grid {
   display: grid;
   grid-template-columns: repeat(
     auto-fit,
-    minmax(min(100%, 290px), 1fr)
+    minmax(min(100%, 320px), 1fr)
   );
   gap: 20px;
 }
 
-.stokvel-card,
-.contribution-card {
-  padding: 24px;
-  border: 1px solid #d7dfe8;
-  border-radius: 14px;
-  background: #fff;
-  color: #1c2938;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 5%);
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.card-header h2,
-.card-header h3 {
-  margin-top: 0;
-}
-
-.role-badge,
-.status-badge {
-  display: inline-block;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: #e8eef8;
-  color: #203b64;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.treasurer-actions {
-  margin-top: 20px;
-}
-
-.treasurer-actions button {
-  padding: 10px 14px;
-  border: 0;
-  border-radius: 8px;
-  background: #dce3eb;
-  color: #58677a;
-  cursor: not-allowed;
+.card-grid > * {
+  min-width: 0;
 }
 
 @media (max-width: 600px) {
@@ -82,7 +34,37 @@ section {
     padding: 20px 14px;
   }
 
-  .card-header {
-    flex-direction: column;
+  .card-grid {
+    gap: 14px;
+  }
+}
+
+/* Prevent nested dashboard content from widening the viewport. */
+.app-container,
+.app-container section,
+.app-container article,
+.card-grid,
+.card-grid > * {
+  min-width: 0;
+}
+
+.app-container {
+  overflow-wrap: anywhere;
+}
+
+/* Keep cards and controls within narrow screens. */
+.app-container button {
+  max-width: 100%;
+}
+
+/* Mobile layout adjustments. */
+@media (max-width: 600px) {
+  .app-container {
+    padding: 16px 12px;
+  }
+
+  .card-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
   }
 }

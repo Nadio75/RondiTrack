@@ -9,22 +9,44 @@ using RondiTrack.Mapping;
 using RondiTrack.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using RondiTrack.Common;
+using System.Globalization;
+using Microsoft.EntityFrameworkCore;
+using RondiTrack.Infrastructure;
 
 // Nested under a stokvel, since a cycle only ever makes sense in the context of one:
 // /api/stokvels/{stokvelId}/cycles
 [ApiController]
-[Route(ApiRoutes.V1 + "/stokvels/{stokvelId}/cycles")]public class ContributionCyclesController : ControllerBase
+[Route(ApiRoutes.V1 + "/stokvels/{stokvelId}/cycles")]
+public class ContributionCyclesController : ControllerBase
 {
     private readonly IStokvelStore _stokvelStore;
     private readonly IContributionCycleStore _cycleStore;
     private readonly IStokvelAccessService _stokvelAccess;
+    private readonly RondiTrackDbContext _db;
 
-    public ContributionCyclesController(IStokvelStore stokvelStore, IContributionCycleStore cycleStore, IStokvelAccessService stokvelAccess)
+
+    public ContributionCyclesController(
+        IStokvelStore stokvelStore,
+        IContributionCycleStore cycleStore,
+        IStokvelAccessService stokvelAccess,
+        RondiTrackDbContext db)
     {
         _stokvelStore = stokvelStore;
         _cycleStore = cycleStore;
         _stokvelAccess = stokvelAccess;
+        _db = db;
     }
+
+
+    private static long ToCents(decimal amount)
+    {
+        return checked((long)decimal.Round(
+            amount * 100m,
+            0,
+            MidpointRounding.AwayFromZero));
+    }
+
+
 
     [HttpGet]
     [EndpointSummary("List a stokvel's contribution cycles")]
@@ -55,17 +77,71 @@ using RondiTrack.Common;
     [ProducesResponseType<IEnumerable<ContributionCycleResponse>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
-    public async Task<ActionResult<IEnumerable<ContributionCycleResponse>>> GetAll(Guid stokvelId)
+
+    public async Task<ActionResult<IEnumerable<ContributionCycleResponse>>> GetAll(
+    Guid stokvelId)
     {
         var denied = await CheckStokvelAccessAsync(stokvelId, "Member");
         if (denied is not null)
             return denied;
-        var stokvel = await _stokvelStore.GetStokvelByIdAsync(stokvelId);
-        if (stokvel is null) throw new NotFoundException("Stokvel not found.");
 
-        var cycles = await _cycleStore.GetAllByStokvelAsync(stokvelId);
-        return Ok(cycles.Select(ContributionCycleMapper.ToResponse));
+        var stokvel = await _stokvelStore.GetStokvelByIdReadOnlyAsync(stokvelId);
+
+        if (stokvel is null)
+            throw new NotFoundException("Stokvel not found.");
+
+        var cycles = (await _cycleStore.GetAllByStokvelAsync(stokvelId))
+            .OrderByDescending(c => c.Period)
+            .ThenByDescending(c => c.CreatedAt)
+            .ThenByDescending(c => c.Id)
+            .ToList();
+
+        // Calculate all contribution totals in one database query.
+        var totals = await _db.Contributions
+            .AsNoTracking()
+            .Where(c => c.StokvelId == stokvelId)
+            .GroupBy(c => c.ContributionCycleId)
+            .Select(g => new
+            {
+                CycleId = g.Key,
+                Total = g.Sum(c => c.Amount)
+            })
+            .ToDictionaryAsync(x => x.CycleId, x => x.Total);
+
+        var responses = cycles.Select(cycle =>
+        {
+            totals.TryGetValue(cycle.Id, out var totalCollected);
+
+            var amountDue = Math.Max(
+                0m,
+                cycle.TargetAmount - totalCollected);
+
+            DateTime? dueAtUtc = null;
+
+            if (DateTime.TryParseExact(
+                cycle.Period,
+                "yyyy-MM",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var period))
+            {
+                dueAtUtc = CycleClosingSchedule.GetClosingInstantUtc(
+                    period.Year,
+                    period.Month,
+                    stokvel.ClosingDayOfMonth);
+            }
+
+            return ContributionCycleMapper.ToResponse(cycle) with
+            {
+                DueAtUtc = dueAtUtc,
+                TotalCollectedCents = ToCents(totalCollected),
+                AmountDueCents = ToCents(amountDue)
+            };
+        }).ToList();
+
+        return Ok(responses);
     }
+
 
     [HttpGet("{cycleId}")]
     [EndpointSummary("Get one contribution cycle by id")]
@@ -95,8 +171,8 @@ using RondiTrack.Common;
     public async Task<ActionResult<ContributionCycleResponse>> GetById(Guid stokvelId, Guid cycleId)
     {
         var denied = await CheckStokvelAccessAsync(stokvelId, "Member");
-if (denied is not null)
-    return denied;
+        if (denied is not null)
+            return denied;
         var cycle = await _cycleStore.GetByIdReadOnlyAsync(cycleId);        // Also checking StokvelId stops someone fetching a real cycle id through the wrong stokvel's route.
         if (cycle is null || cycle.StokvelId != stokvelId)
             throw new NotFoundException("Contribution cycle not found.");
@@ -152,7 +228,7 @@ if (denied is not null)
         "TreasurerOrChairperson");
 
         if (denied is not null)
-        return denied;
+            return denied;
         var stokvel = await _stokvelStore.GetStokvelByIdAsync(stokvelId);
         if (stokvel is null) throw new NotFoundException("Stokvel not found.");
 
@@ -214,8 +290,8 @@ if (denied is not null)
     public async Task<ActionResult<ContributionCycleResponse>> Update(Guid stokvelId, Guid cycleId, CreateContributionCycleRequest request)
     {
         var denied = await CheckStokvelAccessAsync(stokvelId, "TreasurerOrChairperson");
-if (denied is not null)
-    return denied;
+        if (denied is not null)
+            return denied;
         var cycle = await _cycleStore.GetByIdAsync(cycleId);
         if (cycle is null || cycle.StokvelId != stokvelId)
             throw new NotFoundException("Contribution cycle not found.");
@@ -252,9 +328,9 @@ if (denied is not null)
     public async Task<IActionResult> Delete(Guid stokvelId, Guid cycleId)
     {
         var denied = await CheckStokvelAccessAsync(stokvelId, "TreasurerOrChairperson");
-if (denied is not null)
-    return denied;
-        var cycle = await _cycleStore.GetByIdReadOnlyAsync(cycleId);        if (cycle is null || cycle.StokvelId != stokvelId)
+        if (denied is not null)
+            return denied;
+        var cycle = await _cycleStore.GetByIdReadOnlyAsync(cycleId); if (cycle is null || cycle.StokvelId != stokvelId)
             throw new NotFoundException("Contribution cycle not found.");
 
         await _cycleStore.DeleteAsync(cycleId);
@@ -263,35 +339,35 @@ if (denied is not null)
     private async Task<ActionResult?> CheckStokvelAccessAsync(
     Guid stokvelId,
     string requiredRole)
-{
-    var result = await _stokvelAccess.CheckAsync(
-        User,
-        stokvelId,
-        requiredRole);
-
-    return result switch
     {
-        StokvelAccessResult.Allowed => null,
+        var result = await _stokvelAccess.CheckAsync(
+            User,
+            stokvelId,
+            requiredRole);
 
-        StokvelAccessResult.NotFound => NotFound(new ProblemDetails
+        return result switch
         {
-            Status = StatusCodes.Status404NotFound,
-            Title = "Not found",
-            Detail = "The stokvel was not found."
-        }),
+            StokvelAccessResult.Allowed => null,
 
-        StokvelAccessResult.Forbidden => StatusCode(
-            StatusCodes.Status403Forbidden,
-            new ProblemDetails
+            StokvelAccessResult.NotFound => NotFound(new ProblemDetails
             {
-                Status = StatusCodes.Status403Forbidden,
-                Title = "Forbidden",
-                Detail = "Your role does not permit this operation."
+                Status = StatusCodes.Status404NotFound,
+                Title = "Not found",
+                Detail = "The stokvel was not found."
             }),
 
-        _ => StatusCode(StatusCodes.Status500InternalServerError)
-    };
-}
-    
+            StokvelAccessResult.Forbidden => StatusCode(
+                StatusCodes.Status403Forbidden,
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = "Forbidden",
+                    Detail = "Your role does not permit this operation."
+                }),
+
+            _ => StatusCode(StatusCodes.Status500InternalServerError)
+        };
+    }
+
 }
 

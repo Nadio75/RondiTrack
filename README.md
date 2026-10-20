@@ -2721,3 +2721,184 @@ npm.cmd run build
 The frontend includes 15 passing unit tests covering money formatting, API amount validation and timezone conversion.
 
 The backend dashboard integration tests also pass, covering authentication, membership isolation, role information and payment summaries.
+
+# Assignment 7.2 — Contribution Cycles UI
+
+## Overview
+
+Assignment 7.2 extends the RondiTrack React frontend with a contribution-cycle dashboard that is easier to understand, accessible, responsive, and consistent across light and dark themes.
+
+The interface currently uses demonstration data rather than making live API requests.
+
+## Backend API Improvements
+
+Before implementing the frontend features, the backend was updated to provide the information required by the dashboard.
+
+### Contribution Cycle Identification
+
+Contribution list responses now include `contributionCycleId`.
+
+This allows the frontend to identify which contribution belongs to which cycle.
+
+### Contribution Cycle Information
+
+The cycle-list response provides the cycle status, closing deadline, amount collected, and amount due.
+
+The frontend can therefore display the correct information without calculating financial totals from incomplete contribution lists.
+
+### Personal Arrears
+
+The authenticated home dashboard response includes `personalArrearsCents` for each stokvel.
+
+Arrears represent unpaid contributions from previous cycles. They are kept separate from the amount owed in the current cycle.
+
+The backend determines arrears using the authenticated user's identity.
+
+## Frontend Features
+
+### Tailwind CSS and shadcn/ui
+
+The frontend uses Tailwind CSS v4 and shadcn/ui components for consistent styling and reusable interface elements.
+
+The design follows a monochrome beige-and-brown colour palette.
+
+### Status Badges
+
+The reusable `StatusBadge` component displays readable labels and icons.
+
+Cycle statuses include Open, Closed, and Paid out.
+
+Contribution demonstration statuses include Pending, Paid, and Confirmed.
+
+Paid means a payment has been claimed or recorded, while Confirmed represents a separate confirmation concept in the demonstration interface. The current backend does not implement a complete payment-confirmation workflow.
+
+Membership roles such as Treasurer and Member are displayed separately from payment statuses.
+
+### Contributions Grouped by Cycle
+
+The `ContributionList` component groups contributions under their associated cycles.
+
+Cycles are displayed newest first, and contributions within each cycle are displayed newest first.
+
+Each cycle displays its status, closing deadline, amount collected, and amount due.
+
+The interface supports expanding and collapsing individual cycles, as well as expanding or collapsing all groups.
+
+Contributions without a matching cycle are preserved under an Unknown cycle group rather than being silently discarded.
+
+Grouping is calculated from the input data rather than stored as duplicated React state.
+
+### South African Due-Date Countdown
+
+The `DueCountdown` component shows how many South African calendar days remain before an open cycle closes.
+
+The countdown supports labels such as Due today, Due tomorrow, Due in N days, and Overdue by N days.
+
+Dates are interpreted using South African Standard Time (UTC+02:00).
+
+A date-only deadline refers to the end of that South African calendar date. The backend supplies UTC deadline instants where available.
+
+The countdown updates when the South African calendar day changes.
+
+Closed and Paid out cycles do not display an active countdown. The server-provided cycle status takes precedence over the countdown.
+
+### Responsive Layout
+
+The dashboard adapts to desktop and mobile screen sizes.
+
+Cards, contribution groups, badges, and theme controls are designed to remain readable on narrow screens.
+
+The mobile layout has been checked using Chrome's responsive device mode.
+
+### Light, Dark, and System Themes
+
+The dashboard supports three appearance settings:
+
+- Light — uses the light beige-and-brown palette.
+- Dark — uses the dark espresso-and-cream palette.
+- System — follows the operating system's appearance preference.
+
+The selected preference is stored locally in the browser when storage is available.
+
+An early script applies the initial theme before React renders, helping prevent a flash of the wrong theme.
+
+The interface also responds to operating-system appearance changes when System is selected.
+
+**Shared-device privacy consideration:** Theme preferences are stored in browser storage and may remain visible to other people using the same browser profile. No authentication token or financial account data should be stored as part of the theme preference.
+
+## Testing and Verification
+
+Frontend checks are run from the `web` directory:
+
+```powershell
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run test -- --run
+npm.cmd run build
+npm.cmd audit --omit=dev
+```
+
+The unit tests cover money formatting, API money conversion, South African date formatting, contribution grouping, and due-date countdown calculations.
+
+The production dependency audit is checked separately from development dependencies using `--omit=dev`.
+
+The generated OpenAPI types are stored in `web/src/api/schema.d.ts`. They are regenerated from the backend rather than edited manually.
+
+## React State and Effects
+
+Contribution groups are derived from the input data. Only user-controlled expansion choices are stored in component state, keyed by cycle identity.
+
+The due-date countdown schedules its next update for the following South African midnight and cleans up its timer when appropriate.
+
+React StrictMode remains enabled during development.
+
+## Screenshots and Accessibility Evidence
+
+Include screenshots showing:
+
+1. Desktop dashboard in Light mode.
+2. Desktop dashboard in Dark mode.
+3. Mobile dashboard at 360 CSS pixels.
+4. Contribution cycles expanded and collapsed.
+
+The final verification should also record measured text-contrast ratios for both themes, with a minimum target of 4.5:1 for normal text.
+
+## Limitations
+
+The frontend currently uses fictional demonstration data and does not make live API requests.
+
+Contribution statuses are demonstration values rather than a complete backend payment-confirmation workflow.
+
+The Treasurer action shown in the interface is a placeholder. Actual authorization must continue to be enforced by the backend.
+
+### Assignment 7.2 Screenshots
+
+#### Desktop — Light Mode
+![RondiTrack light dashboard](web/screenshots/desktop-light.png)
+
+#### Desktop — Dark Mode
+![RondiTrack dark dashboard](web/screenshots/desktop-dark.png)
+
+#### Mobile — 360px
+![RondiTrack mobile responsive testing](web/screenshots/mobile-responsive-devtools.png)
+
+#### Expanded Contribution Cycles
+![Expanded contribution cycles](web/screenshots/cycles-expanded.png)
+
+### Accessibility — Colour Contrast Verification
+
+Assignment 7.2 uses a beige-and-brown colour palette with separate light and dark themes.
+
+The following text/background combinations were checked against the WCAG AA normal-text contrast requirement of 4.5:1.
+
+| Element | Light mode | Dark mode |
+|---|---|---|
+| Status badge text | 10.41:1–11.68:1 | 9.22:1 |
+| Main page text | 13.18:1 | 14.11:1 |
+| Muted text on muted background | 6.58:1 | 7.14:1 |
+
+All measured combinations pass the 4.5:1 requirement.
+
+Status badges also include written labels and icons so that users do not need to rely on colour alone to understand statuses such as Open, Closed, Paid out, Pending, Paid, Confirmed, and Arrears.
+
+These results verify the specified CSS colour combinations. Full keyboard, focus-indicator, and screen-reader accessibility testing remains a separate verification activity.

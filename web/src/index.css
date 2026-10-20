@@ -1,24 +1,172 @@
 
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
 :root {
-  font-family: Inter, system-ui, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color: #1c2938;
-  background: #f4f7fb;
+  font-family: "Geist Variable", system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+
+  --background: #faf7f2;
+  --foreground: #38281f;
+
+  --card: #ffffff;
+  --card-foreground: #38281f;
+
+  --popover: #ffffff;
+  --popover-foreground: #38281f;
+
+  --primary: #38281f;
+  --primary-foreground: #faf7f2;
+
+  --secondary: #e8dccb;
+  --secondary-foreground: #38281f;
+
+  --muted: #f0e9df;
+  --muted-foreground: #654c3b;
+
+  --accent: #e8dccb;
+  --accent-foreground: #38281f;
+
+  --destructive: #8f2727;
+
+  --border: #d2c0ad;
+  --input: #d2c0ad;
+  --ring: #80634f;
+
+  --chart-1: #e8dccb;
+  --chart-2: #b9a38f;
+  --chart-3: #80634f;
+  --chart-4: #654c3b;
+  --chart-5: #38281f;
+
+  --radius: 0.875rem;
+
+  --sidebar: #f0e9df;
+  --sidebar-foreground: #38281f;
+  --sidebar-primary: #38281f;
+  --sidebar-primary-foreground: #faf7f2;
+  --sidebar-accent: #e8dccb;
+  --sidebar-accent-foreground: #38281f;
+  --sidebar-border: #d2c0ad;
+  --sidebar-ring: #80634f;
 }
 
-* {
-  box-sizing: border-box;
+.dark {
+  color-scheme: dark;
+
+  --background: #241b17;
+  --foreground: #f5e9da;
+
+  --card: #382b24;
+  --card-foreground: #f5e9da;
+
+  --popover: #382b24;
+  --popover-foreground: #f5e9da;
+
+  --primary: #f5e9da;
+  --primary-foreground: #241b17;
+
+  --secondary: #4b382e;
+  --secondary-foreground: #f5e9da;
+
+  --muted: #4b382e;
+  --muted-foreground: #e0cdb9;
+
+  --accent: #4b382e;
+  --accent-foreground: #f5e9da;
+
+  --destructive: #ffb4a8;
+
+  --border: #796250;
+  --input: #796250;
+  --ring: #d4bca5;
+
+  --chart-1: #f5e9da;
+  --chart-2: #d4bca5;
+  --chart-3: #b9a38f;
+  --chart-4: #80634f;
+  --chart-5: #654c3b;
+
+  --sidebar: #382b24;
+  --sidebar-foreground: #f5e9da;
+  --sidebar-primary: #f5e9da;
+  --sidebar-primary-foreground: #241b17;
+  --sidebar-accent: #4b382e;
+  --sidebar-accent-foreground: #f5e9da;
+  --sidebar-border: #796250;
+  --sidebar-ring: #d4bca5;
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: "Geist Variable", system-ui, sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-button {
-  font: inherit;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    box-sizing: border-box;
+  }
+
+  html {
+    @apply font-sans;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    min-width: 320px;
+  }
+
+  button {
+    font: inherit;
+  }
 }

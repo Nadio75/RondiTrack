@@ -10,8 +10,16 @@ public class EfContributionCycleStore : IContributionCycleStore
 
     public EfContributionCycleStore(RondiTrackDbContext db) => _db = db;
 
-    public async Task<IEnumerable<ContributionCycle>> GetAllByStokvelAsync(Guid stokvelId) =>
-        await _db.ContributionCycles.Where(c => c.StokvelId == stokvelId).ToListAsync();
+
+public async Task<IEnumerable<ContributionCycle>> GetAllByStokvelAsync(
+    Guid stokvelId) =>
+    await _db.ContributionCycles
+        .AsNoTracking()
+        .Where(c => c.StokvelId == stokvelId)
+        .OrderByDescending(c => c.Period)
+        .ThenByDescending(c => c.CreatedAt)
+        .ThenByDescending(c => c.Id)
+        .ToListAsync();
 
     public async Task<ContributionCycle?> GetByIdAsync(Guid id) =>
         await _db.ContributionCycles.FindAsync(id);
