@@ -1690,6 +1690,16 @@ export interface components {
             targetAmount: number;
             /** Format: date-time */
             createdAt: string;
+            status?: string;
+            isClosed?: boolean;
+            /** Format: date-time */
+            closedAtUtc?: null | string;
+            /** Format: date-time */
+            dueAtUtc?: null | string;
+            /** Format: int64 */
+            totalCollectedCents?: number | string;
+            /** Format: int64 */
+            amountDueCents?: number | string;
         };
         ContributionListItem: {
             /** Format: uuid */
@@ -1699,6 +1709,8 @@ export interface components {
             memberName: string;
             /** Format: date-time */
             createdAt: string;
+            /** Format: uuid */
+            contributionCycleId?: string;
         };
         ContributionRequest: {
             /** Format: uuid */
@@ -1764,6 +1776,8 @@ export interface components {
             currentCycle: null | components["schemas"]["HomeCycleResponse"];
             /** Format: int64 */
             contributionAmountCents?: number | string;
+            /** Format: int64 */
+            personalArrearsCents?: number | string;
         };
         LoginRequest: {
             email?: string;

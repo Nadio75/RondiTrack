@@ -12,3 +12,6 @@ export type HomeCycle =
 
 export type ContributionItem =
   components['schemas']['ContributionListItem']
+
+export type ContributionCycle =
+  components['schemas']['ContributionCycleResponse']

@@ -10,6 +10,8 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using RondiTrack.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 [Collection("Postgres collection")]
 public class CyclesApiTests
@@ -125,6 +127,93 @@ public class CyclesApiTests
         Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
         second.AssertProblem(HttpStatusCode.NotFound);
     }
+[Fact]
+public async Task Listing_cycles_returns_newest_period_first()
+{
+    var stokvel = await _client.CreateStokvelAsync();
+
+    await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
+    // Deliberately create the cycles out of date order.
+    await _client.CreateCycleAsync(stokvel.Id, "2026-10");
+    await _client.CreateCycleAsync(stokvel.Id, "2026-08");
+    await _client.CreateCycleAsync(stokvel.Id, "2026-09");
+
+    var cycles = await _client.GetFromJsonAsync<
+        List<ContributionCycleResponse>>(
+        $"/api/v1/stokvels/{stokvel.Id}/cycles");
+
+    Assert.NotNull(cycles);
+    Assert.Equal(3, cycles.Count);
+
+    Assert.Equal(
+        new[] { "2026-10", "2026-09", "2026-08" },
+        cycles.Select(c => c.Period));
+}
+
+[Fact]
+public async Task Listing_cycles_with_no_cycles_returns_empty_array()
+{
+    var stokvel = await _client.CreateStokvelAsync();
+
+    await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
+    var cycles = await _client.GetFromJsonAsync<
+        List<ContributionCycleResponse>>(
+        $"/api/v1/stokvels/{stokvel.Id}/cycles");
+
+    Assert.NotNull(cycles);
+    Assert.Empty(cycles);
+}
+
+[Fact]
+public async Task Listing_cycles_returns_the_correct_South_African_due_date()
+{
+    var stokvel = await _client.CreateStokvelAsync();
+
+    await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
+    await _client.CreateCycleAsync(stokvel.Id, "2026-10");
+
+    var cycles = await _client.GetFromJsonAsync<
+        List<ContributionCycleResponse>>(
+        $"/api/v1/stokvels/{stokvel.Id}/cycles");
+
+    var cycle = Assert.Single(cycles!);
+
+    // The default closing day is the 25th.
+    // Midnight on October 26 in South Africa is
+    // October 25 at 22:00 UTC.
+    var expectedDueAtUtc = new DateTime(
+        2026, 10, 25, 22, 0, 0, DateTimeKind.Utc);
+
+    Assert.Equal(expectedDueAtUtc, cycle.DueAtUtc);
+}
+
+[Fact]
+public async Task Listing_cycles_without_contributions_returns_zero_collected()
+{
+    var stokvel = await _client.CreateStokvelAsync();
+
+    await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
+    var cycle = await _client.CreateCycleAsync(
+        stokvel.Id, "2026-09");
+
+    var cycles = await _client.GetFromJsonAsync<
+        List<ContributionCycleResponse>>(
+        $"/api/v1/stokvels/{stokvel.Id}/cycles");
+
+    var result = Assert.Single(cycles!);
+
+    Assert.Equal(cycle.Id, result.Id);
+    Assert.Equal(0L, result.TotalCollectedCents);
+    Assert.Equal(
+        checked((long)(result.TargetAmount * 100m)),
+        result.AmountDueCents);
+    Assert.Equal("Open", result.Status);
+}
+
 
     // ---------- Validation (400), not found (404), conflict (409) ----------
 
@@ -242,4 +331,77 @@ public class CyclesApiTests
 
         response.AssertProblem(HttpStatusCode.NotFound);
     }
+[Fact]
+public async Task Listing_cycles_calculates_collected_and_outstanding_amounts()
+{
+    var stokvel = await _client.CreateStokvelAsync();
+
+    await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
+    var cycle = await _client.CreateCycleAsync(
+        stokvel.Id, "2026-09");
+
+    // Store an actual contribution in the PostgreSQL test database.
+    using (var scope = _factory.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider
+            .GetRequiredService<RondiTrackDbContext>();
+
+        var member = await db.StokvelMembers
+            .AsNoTracking()
+            .FirstAsync(m => m.StokvelId == stokvel.Id);
+
+        db.Contributions.Add(new Contribution(
+            stokvel.Id,
+            member.UserId,
+            750m,
+            cycle.Id));
+
+        await db.SaveChangesAsync();
+    }
+
+    var cycles = await _client.GetFromJsonAsync<
+        List<ContributionCycleResponse>>(
+        $"/api/v1/stokvels/{stokvel.Id}/cycles");
+
+    var result = Assert.Single(cycles!);
+
+    Assert.Equal(75000L, result.TotalCollectedCents);
+    Assert.Equal(25000L, result.AmountDueCents);
+}
+
+[Fact]
+public async Task Listing_a_closed_cycle_reports_closed_status()
+{
+    var stokvel = await _client.CreateStokvelAsync();
+
+    await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+
+    var cycle = await _client.CreateCycleAsync(
+        stokvel.Id, "2026-09");
+
+    // Close the actual domain object and save its new state.
+    using (var scope = _factory.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider
+            .GetRequiredService<RondiTrackDbContext>();
+
+        var storedCycle = await db.ContributionCycles
+            .SingleAsync(c => c.Id == cycle.Id);
+
+        storedCycle.Close(DateTime.UtcNow);
+
+        await db.SaveChangesAsync();
+    }
+
+    var cycles = await _client.GetFromJsonAsync<
+        List<ContributionCycleResponse>>(
+        $"/api/v1/stokvels/{stokvel.Id}/cycles");
+
+    var result = Assert.Single(cycles!);
+
+    Assert.True(result.IsClosed);
+    Assert.Equal("Closed", result.Status);
+    Assert.NotNull(result.ClosedAtUtc);
+}
 }

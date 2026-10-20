@@ -1,3 +1,4 @@
+
 import js from '@eslint/js'
 import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'
@@ -7,6 +8,7 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
   globalIgnores(['dist']),
+
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -19,4 +21,16 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+
+  // shadcn/ui generates components that also export styling utilities.
+  // Allow those exports only in the generated UI components folder.
+  {
+  files: [
+    'src/components/ui/**/*.{ts,tsx}',
+    'src/theme/ThemeProvider.tsx',
+  ],
+  rules: {
+    'react-refresh/only-export-components': 'off',
+  },
+},
 ])

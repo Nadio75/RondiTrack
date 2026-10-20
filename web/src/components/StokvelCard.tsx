@@ -1,8 +1,19 @@
 
-import type { HomeStokvel } from '../api/types'
-import { toSafeCents } from '../lib/apiMoney'
-import { formatCents } from '../lib/money'
-import { formatSastDateTime } from '../lib/dates'
+import type { HomeStokvel } from '@/api/types'
+import { DueCountdown } from '@/components/DueCountdown'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+
+import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/StatusBadge'
+
+import { toSafeCents } from '@/lib/apiMoney'
+import { formatCents } from '@/lib/money'
+import { formatSastDateTime } from '@/lib/dates'
 
 type StokvelCardProps = {
   stokvel: HomeStokvel
@@ -13,6 +24,10 @@ export function StokvelCard({ stokvel }: StokvelCardProps) {
 
   const contributionAmount = formatCents(
     toSafeCents(stokvel.contributionAmountCents),
+  )
+
+  const personalArrears = toSafeCents(
+    stokvel.personalArrearsCents,
   )
 
   const paidAmount = cycle
@@ -27,54 +42,104 @@ export function StokvelCard({ stokvel }: StokvelCardProps) {
     stokvel.role.toLowerCase() === 'treasurer'
 
   return (
-    <article className="stokvel-card">
-      <header className="card-header">
-        <h2>{stokvel.name}</h2>
-        <span className="role-badge">{stokvel.role}</span>
-      </header>
+    <Card className="min-w-0">
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <CardTitle className="min-w-0 break-words text-lg">
+            {stokvel.name}
+          </CardTitle>
 
-      <p>
-        <strong>Contribution amount:</strong>{' '}
-        {contributionAmount}
-      </p>
-
-      {cycle ? (
-        <section aria-label="Current contribution cycle">
-          <h3>Current cycle: {cycle.period}</h3>
-
-          <p>
-            <strong>Cycle status:</strong> {cycle.status}
-          </p>
-
-          <p>
-            <strong>Paid:</strong> {paidAmount}
-          </p>
-
-          <p>
-            <strong>Still owed:</strong> {owedAmount}
-          </p>
-
-          <p>
-            <strong>Cycle closes:</strong>{' '}
-            {formatSastDateTime(cycle.dueAtUtc)}
-          </p>
-
-          <p>
-            <strong>Next payout:</strong>{' '}
-            {formatSastDateTime(cycle.nextPayoutDate)}
-          </p>
-        </section>
-      ) : (
-        <p>No active contribution cycle.</p>
-      )}
-
-      {isTreasurer && (
-        <div className="treasurer-actions">
-          <button type="button" disabled>
-            Manage contributions (coming soon)
-          </button>
+          <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+            {isTreasurer
+              ? "You're the Treasurer"
+              : stokvel.role}
+          </span>
         </div>
-      )}
-    </article>
+
+        <StatusBadge
+          status="Arrears"
+          arrearsCents={personalArrears}
+          className="mt-2"
+        />
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        <div>
+          <p className="text-sm text-muted-foreground">
+            Contribution amount
+          </p>
+          <p className="text-xl font-semibold">
+            {contributionAmount}
+          </p>
+        </div>
+
+        {cycle ? (
+          <section
+            aria-label="Current contribution cycle"
+            className="space-y-3 rounded-xl border border-border bg-muted/40 p-4"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="font-semibold">
+                Current cycle: {cycle.period}
+              </h4>
+              <StatusBadge status={cycle.status} />
+            </div>
+             <DueCountdown
+                dueAtUtc={cycle.dueAtUtc}
+                status={cycle.status}
+              />
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Paid
+                </p>
+                <p className="font-semibold">
+                  {paidAmount}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Still owed
+                </p>
+                <p className="font-semibold">
+                  {owedAmount}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm">
+              <span className="font-medium">
+                Cycle closes:
+              </span>{' '}
+              {formatSastDateTime(cycle.dueAtUtc)}
+            </p>
+
+            <p className="text-sm">
+              <span className="font-medium">
+                Next payout:
+              </span>{' '}
+              {formatSastDateTime(cycle.nextPayoutDate)}
+            </p>
+          </section>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No active contribution cycle.
+          </p>
+        )}
+
+        {isTreasurer && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled
+            className="w-full"
+          >
+            Manage contributions (coming soon)
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   )
 }

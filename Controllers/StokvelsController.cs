@@ -544,7 +544,7 @@ if (denied is not null)
             return CreatedAtAction(nameof(GetById), new { id }, RondiTrack.Mapping.PayoutMapper.ToResponse(payout));
     }
 
-    
+
    [HttpGet("{id}/cycles/{cycleId}/contributions")]
 [EndpointSummary("List contributions for a cycle (paged)")]
 [EndpointDescription("""
@@ -648,10 +648,19 @@ if (denied is not null)
         items = rows.Take(size).ToList();
     }
 
-    var response = new Models.Dtos.PagedResponse<Models.Dtos.ContributionListItem>(
-        items.Select(x => new Models.Dtos.ContributionListItem(x.Id, x.Amount, x.MemberName, x.CreatedAt)).ToList(),
-        nextToken
-    );
+
+var response = new Models.Dtos.PagedResponse<Models.Dtos.ContributionListItem>(
+    items.Select(x => new Models.Dtos.ContributionListItem(
+        x.Id,
+        x.Amount,
+        x.MemberName,
+        x.CreatedAt)
+    {
+        ContributionCycleId = cycleId
+    }).ToList(),
+    nextToken
+);
+
 
     return Ok(response);
 }
