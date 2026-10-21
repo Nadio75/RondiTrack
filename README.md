@@ -2902,3 +2902,268 @@ All measured combinations pass the 4.5:1 requirement.
 Status badges also include written labels and icons so that users do not need to rely on colour alone to understand statuses such as Open, Closed, Paid out, Pending, Paid, Confirmed, and Arrears.
 
 These results verify the specified CSS colour combinations. Full keyboard, focus-indicator, and screen-reader accessibility testing remains a separate verification activity.
+
+### Assignment 7.3 — Single-flight mutation proof
+
+**Purpose:** Verify that concurrent requests with expired access tokens share a single refresh operation.
+
+**Test:** `shares one refresh across five parallel 401 responses`
+
+**Original implementation:** `refreshAccessToken()` shares an in-flight refresh promise between concurrent requests.
+
+**Mutation:** Temporarily replaced the implementation with `return doRefresh();`, removing the single-flight mechanism.
+
+**Observed result:**
+- Five authentication tests executed.
+- Four tests passed.
+- The single-flight test failed.
+- The assertion reported `expected 5 to be 1`, confirming that five refresh requests occurred instead of one.
+
+**Restoration:** The original single-flight implementation was restored.
+
+**Final verification:** Record the results of the restored test run here.
+
+**Conclusion:** The test successfully detects when single-flight refresh protection is missing.
+
+## Assignment 7.3 — Live RondiTrack Data
+
+### Overview
+
+Assignment 7.3 connects the existing React dashboard to the real RondiTrack ASP.NET Core API.
+
+In Assignment 7.2, the frontend demonstrated the user interface using fictional sample data. Assignment 7.3 replaces the dashboard's demonstration data with information retrieved from the authenticated backend.
+
+The application now uses React, TypeScript, TanStack Query, the ASP.NET Core API, Entity Framework Core, and PostgreSQL.
+
+### Live Dashboard Integration
+
+The frontend retrieves the authenticated user's stokvel information using:
+
+`GET /api/v1/me/home`
+
+The response contains the stokvels associated with the signed-in user, including membership roles, contribution amounts, and available contribution-cycle information.
+
+The dashboard uses the `useHome()` hook in `web/src/api/queries.ts`.
+
+TanStack Query manages the request, loading state, error state, and cached result.
+
+The `StokvelCard` component displays the returned stokvel information.
+
+**Why this matters:** The dashboard now displays information from the database rather than relying on hard-coded demonstration records.
+
+### Authentication and Session Management
+
+The frontend provides a login form connected to the backend authentication endpoints.
+
+Access tokens are stored in JavaScript memory rather than localStorage.
+
+Refresh tokens are managed through browser cookies.
+
+The authentication implementation is located in:
+
+`web/src/auth/session.ts`
+
+It supports:
+
+- Signing in with the user's credentials.
+- Restoring a session using the refresh endpoint.
+- Automatically refreshing an expired access token.
+- Retrying an authenticated request once after receiving HTTP 401.
+- Signing out and clearing the in-memory access token.
+- Preventing stale refresh responses from restoring an invalidated session.
+
+### Single-Flight Token Refresh
+
+The frontend uses a single-flight refresh mechanism.
+
+In simple terms, when several requests need a new access token at the same time, they share one refresh operation instead of independently requesting new tokens.
+
+This is important because RondiTrack rotates refresh tokens. Multiple simultaneous refresh attempts could otherwise cause authentication conflicts.
+
+The authentication tests include a case with five parallel requests.
+
+When the single-flight protection was deliberately disabled, the test detected five refresh requests instead of one.
+
+After restoring the implementation, the frontend test suite passed.
+
+### Creating a Stokvel
+
+A Create Stokvel feature was added to the dashboard.
+
+The form is implemented in:
+
+`web/src/components/CreateStokvelForm.tsx`
+
+It accepts:
+
+- A stokvel name.
+- A positive contribution amount in rand.
+
+The form validates the input before submission.
+
+It sends an authenticated request to:
+
+`POST /api/v1/stokvels`
+
+The backend was updated so that the authenticated creator automatically becomes the stokvel's first member with the Chairperson role.
+
+The new stokvel and its initial membership are saved together.
+
+After successful creation, TanStack Query invalidates the relevant cached queries, causing the dashboard to fetch updated information.
+
+**Manual verification:** A stokvel named Bitcube was successfully created through the browser. The dashboard displayed the stokvel, its R1,500 contribution amount, and the creator's Chairperson role.
+
+### API Client and Generated Types
+
+The frontend uses `openapi-fetch` to communicate with the backend.
+
+The authenticated API client is implemented in:
+
+`web/src/api/client.ts`
+
+The generated OpenAPI TypeScript definitions are stored in:
+
+`web/src/api/schema.d.ts`
+
+The query hooks are implemented in:
+
+`web/src/api/queries.ts`
+
+These files allow the frontend to use typed API requests and responses instead of manually defining every backend response structure.
+
+### API Error Handling
+
+The reusable API error implementation is located in:
+
+`web/src/api/ApiError.ts`
+
+It handles HTTP error statuses and attempts to read the backend's ProblemDetails response.
+
+It provides useful messages for failures such as invalid input, insufficient permissions, missing resources, conflicts, rate limiting, and server errors.
+
+The implementation also reads the `Retry-After` header when available.
+
+API errors include their HTTP status so TanStack Query can distinguish client errors from potentially retryable failures.
+
+The dashboard displays an error message and provides a Try Again button if loading fails.
+
+### Loading Skeleton
+
+The dashboard now displays loading placeholders while waiting for its API response.
+
+The component is located in:
+
+`web/src/components/DashboardSkeleton.tsx`
+
+Instead of showing an empty page, the user sees placeholder shapes resembling the dashboard cards.
+
+**Manual verification:** Chrome Developer Tools network throttling was used to simulate a slow connection. The skeleton appeared before the live stokvel information loaded.
+
+### Query Caching and Refreshing
+
+TanStack Query manages frontend server-state caching.
+
+The configuration is located in:
+
+`web/src/api/queryClient.ts`
+
+Queries use a stale time of 30 seconds.
+
+The frontend avoids automatically retrying ordinary HTTP 4xx client errors.
+
+After creating a stokvel, the home and stokvel-list queries are invalidated so the interface can retrieve the latest information.
+
+The query cache is cleared when the application transitions between signed-in and signed-out states.
+
+### Running the Application
+
+The backend API and PostgreSQL database can be started using Docker Compose from the repository root:
+
+```powershell
+docker compose up -d --build api
+docker compose ps
+docker compose logs api --tail 30
+```
+
+The API is available at:
+
+`http://localhost:8080`
+
+To run the React frontend, open a separate terminal:
+
+```powershell
+cd web
+npm install
+npm run dev
+```
+
+The frontend is available at:
+
+`http://localhost:3000`
+
+The frontend requires the correct API base URL configuration and a running backend.
+
+### Testing and Verification
+
+Backend tests are run from the repository root:
+
+```powershell
+dotnet test
+```
+
+**Latest verified backend result:**
+
+- 176 tests passed.
+- 0 tests failed.
+- 0 tests skipped.
+
+Frontend checks are run from the `web` directory:
+
+```powershell
+npm run typecheck
+npm run lint
+npm run build
+npm run test -- --run
+```
+
+**Latest verified frontend result:**
+
+- TypeScript typecheck passed.
+- ESLint passed.
+- Production build passed.
+- 35 frontend tests passed.
+- 0 frontend tests failed.
+
+**Combined result:** 211 automated tests passed across the backend and frontend suites.
+
+### Manual Browser Verification
+
+The following behaviors were checked using the running application:
+
+1. Signing in to the application.
+2. Loading the authenticated dashboard.
+3. Creating a new stokvel.
+4. Displaying the newly created stokvel.
+5. Displaying the creator's Chairperson role.
+6. Displaying the contribution amount.
+7. Showing loading placeholders under network throttling.
+8. Logging out and signing in again.
+
+The tests confirm the main frontend-to-backend workflow. They do not replace a full browser-based automated end-to-end test suite.
+
+### Remaining Limitations
+
+- The new stokvel does not automatically have an active contribution cycle. A cycle must be created separately.
+- The frontend does not yet provide a complete interface for managing all contribution-cycle and payment operations.
+- Some older Assignment 7.2 components and demonstration statuses remain in the project, but the authenticated dashboard now uses live API data.
+- Full cross-account session-isolation testing and automated browser end-to-end testing remain future verification tasks.
+
+### Assignment 7.3 Outcome
+
+The main objective was achieved: RondiTrack's React dashboard now communicates with the real backend and displays authenticated stokvel information.
+
+Users can sign in, create a stokvel, automatically become its Chairperson, and see the new stokvel appear in their dashboard.
+
+The implementation also includes automatic token refresh, typed API requests, query caching, error handling, and loading skeletons.
+
+All 176 backend tests and 35 frontend tests passed in the latest verified runs.

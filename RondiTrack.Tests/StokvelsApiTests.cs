@@ -8,6 +8,9 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using RondiTrack.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using RondiTrack.Infrastructure;
 
 [Collection("Postgres collection")]
 public class StokvelsApiTests
@@ -23,26 +26,53 @@ public StokvelsApiTests(PostgresApiFactory factory)
     // ---------- Stokvel happy paths ----------
 
     [Fact]
-    public async Task Creating_a_stokvel_returns_201_with_zero_members_and_a_location_and_it_can_be_fetched()
-    {
-        var response = await _client.PostAsJsonAsync("/api/v1/stokvels",
-            new { name = "Happy Path Stokvel", contributionAmount = 500 });
+public async Task Creating_a_stokvel_returns_201_with_creator_as_chairperson()
+{
+    var creator = await _client.CreateUserAsync("Creator");
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var created = await response.Content.ReadFromJsonAsync<StokvelResponse>();
-        Assert.Equal(0, created!.MemberCount);
-        Assert.EndsWith($"/api/v1/stokvels/{created.Id}", response.Headers.Location!.ToString());
-        var denied = await _client.GetAsync($"/api/v1/stokvels/{created.Id}");
-        denied.AssertProblem(HttpStatusCode.NotFound);
+    _client.UseTestUser(creator.Id);
 
-        await _client.ArrangeChairpersonAsync(_factory, created.Id);
+    var response = await _client.PostAsJsonAsync(
+        "/api/v1/stokvels",
+        new
+        {
+            name = "Happy Path Stokvel " + Guid.NewGuid(),
+            contributionAmount = 500
+        });
 
-        var fetched = await _client.GetFromJsonAsync<StokvelResponse>($"/api/v1/stokvels/{created.Id}");
-Assert.Equal(created.Id, fetched!.Id);
-Assert.Equal(created.Name, fetched.Name);
-Assert.Equal(created.ContributionAmount, fetched.ContributionAmount);
-Assert.Equal(1, fetched.MemberCount);        
-    }
+    Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+    var created = await response.Content
+        .ReadFromJsonAsync<StokvelResponse>();
+
+    Assert.NotNull(created);
+    Assert.Equal(1, created.MemberCount);
+
+    Assert.EndsWith(
+        $"/api/v1/stokvels/{created.Id}",
+        response.Headers.Location!.ToString());
+
+    // The creator should immediately be allowed to read the stokvel.
+    var fetched = await _client.GetFromJsonAsync<StokvelResponse>(
+        $"/api/v1/stokvels/{created.Id}");
+
+    Assert.NotNull(fetched);
+    Assert.Equal(created.Id, fetched.Id);
+    Assert.Equal(1, fetched.MemberCount);
+
+    // Verify that the database stored the correct role.
+    using var scope = _factory.Services.CreateScope();
+
+    var db = scope.ServiceProvider
+        .GetRequiredService<RondiTrackDbContext>();
+
+    var membership = await db.StokvelMembers
+        .SingleAsync(m =>
+            m.StokvelId == created.Id &&
+            m.UserId == creator.Id);
+
+    Assert.Equal("Chairperson", membership.Role);
+}
 
     [Fact]
     public async Task Listing_stokvels_includes_a_stokvel_that_was_just_created()
@@ -135,7 +165,6 @@ public async Task Adding_a_member_returns_204_and_raises_the_member_count_to_two
 {
     var stokvel = await _client.CreateStokvelAsync();
 
-    await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
 
     var user = await _client.CreateUserAsync();
 
@@ -153,7 +182,6 @@ public async Task Adding_the_same_member_twice_returns_409_and_the_count_stays_a
 {
     var stokvel = await _client.CreateStokvelAsync();
 
-    await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
 
     var user = await _client.CreateUserAsync();
 

@@ -400,21 +400,32 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
     }
 
     [Fact]
-    public async Task Authenticated_nonmember_receives_404_for_stokvel()
-    {
-        using var client = CreateClient();
+public async Task Authenticated_nonmember_receives_404_for_stokvel()
+{
+    using var client = CreateClient();
 
-        var (_, token) = await CreateAuthenticatedUserAsync(client);
-        SetBearerToken(client, token);
+    // Create the stokvel as its legitimate owner.
+    var (_, ownerToken) =
+        await CreateAuthenticatedUserAsync(client);
 
-        var stokvelId = await CreateStokvelAsync(client);
+    SetBearerToken(client, ownerToken);
 
-        var response = await client.GetAsync(
-            $"/api/v1/stokvels/{stokvelId}");
+    var stokvelId = await CreateStokvelAsync(client);
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
+    // Create a completely different authenticated user.
+    var (_, outsiderToken) =
+        await CreateAuthenticatedUserAsync(client);
 
+    SetBearerToken(client, outsiderToken);
+
+    // The outsider must not be able to access the stokvel.
+    var response = await client.GetAsync(
+        $"/api/v1/stokvels/{stokvelId}");
+
+    Assert.Equal(
+        HttpStatusCode.NotFound,
+        response.StatusCode);
+}
     [Fact]
     public async Task Member_cannot_update_stokvel()
     {

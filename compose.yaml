@@ -33,7 +33,7 @@ services:
       Jwt__SigningKey: ${JWT_SIGNING_KEY:?Set JWT_SIGNING_KEY in .env}
 
   api:
-    image: ronditrack-api:6.4
+    image: ronditrack-api:7.3
     build:
       context: .
       dockerfile: Dockerfile
@@ -44,7 +44,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__RondiTrack: "Host=db;Port=5432;Database=ronditrack;Username=ronditrack;Password=${POSTGRES_PASSWORD}"
       Jwt__Issuer: ${JWT_ISSUER:?Set JWT_ISSUER in .env}
