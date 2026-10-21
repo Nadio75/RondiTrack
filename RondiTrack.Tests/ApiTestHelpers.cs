@@ -5,6 +5,9 @@ using System.Net;
 using System.Net.Http.Json;
 using RondiTrack.Models;
 using RondiTrack.Tests.TestSupport;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using RondiTrack.Infrastructure;
 
 // A stokvel with one member and one cycle: everything needed to record a contribution.
 public record ApiScenario(StokvelResponse Stokvel, UserResponse User, ContributionCycleResponse Cycle);
@@ -18,16 +21,29 @@ internal static class ApiTestHelpers
         return (await response.Content.ReadFromJsonAsync<UserResponse>())!;
     }
 
-    public static async Task<StokvelResponse> CreateStokvelAsync(this HttpClient client, decimal contributionAmount = 500m)
-    {
-        var response = await client.PostAsJsonAsync("/api/v1/stokvels", new
+    public static async Task<StokvelResponse> CreateStokvelAsync(
+    this HttpClient client,
+    decimal contributionAmount = 500m)
+{
+    // Create an actual user before creating the stokvel.
+    var creator = await client.CreateUserAsync("Stokvel Creator");
+
+    // Make this user the authenticated test caller.
+    client.UseTestUser(creator.Id);
+
+    var response = await client.PostAsJsonAsync(
+        "/api/v1/stokvels",
+        new
         {
             name = "Test Stokvel " + Guid.NewGuid(),
             contributionAmount
         });
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<StokvelResponse>())!;
-    }
+
+    response.EnsureSuccessStatusCode();
+
+    return (await response.Content
+        .ReadFromJsonAsync<StokvelResponse>())!;
+}
 
     public static async Task<ContributionCycleResponse> CreateCycleAsync(
         this HttpClient client, Guid stokvelId, string period = "2026-09", decimal targetAmount = 1000m)
@@ -53,28 +69,37 @@ public static async Task<ApiScenario> ArrangeMemberWithCycleAsync(
     this HttpClient client,
     PostgresApiFactory factory)
 {
-    // Create a stokvel. It starts with zero members.
+    // Creating a stokvel now automatically adds its creator
+    // as the first member with the Chairperson role.
     var stokvel = await client.CreateStokvelAsync();
 
-    // Create a real user in the test database.
-    var user = await client.CreateUserAsync();
+    // Retrieve the ID of the authenticated creator.
+    var creatorId = Guid.Parse(
+        client.DefaultRequestHeaders
+            .GetValues("X-Test-UserId")
+            .Single());
 
-    // Test-only setup: give this user Chairperson membership.
-    // This does NOT change the production API's creation rules.
-    await factory.EnsureMembershipAsync(
-        stokvel.Id,
-        user.Id,
-        "Chairperson");
+    // Load that user from the test database.
+    await using var scope = factory.Services.CreateAsyncScope();
 
-    // Make the authenticated test caller this user.
-    client.UseTestUser(user.Id);
+    var db = scope.ServiceProvider
+        .GetRequiredService<RondiTrackDbContext>();
 
-    // A Chairperson is allowed to open a contribution cycle.
+    var creator = await db.Users
+        .AsNoTracking()
+        .SingleAsync(u => u.Id == creatorId);
+
+    // The creator is already authenticated as Chairperson.
     var cycle = await client.CreateCycleAsync(stokvel.Id);
 
-    return new ApiScenario(stokvel, user, cycle);
+    return new ApiScenario(
+        stokvel,
+        new UserResponse(
+            creator.Id,
+            creator.Name,
+            creator.ContactNumber),
+        cycle);
 }
-
     public static object ContributionBody(ApiScenario s, decimal amount = 500m) =>
         new { userId = s.User.Id, amount, contributionCycleId = s.Cycle.Id };
 

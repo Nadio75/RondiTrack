@@ -55,24 +55,33 @@ public class EdgeCaseTests
         Assert.Equal((HttpStatusCode)expected, response.StatusCode);
     }
 
-    [Theory]
-    [InlineData(100, 201)]
-    [InlineData(101, 400)]
-    public async Task A_stokvel_name_is_accepted_at_100_characters_and_rejected_at_101(
-        int length,
-        int expected)
-    {
-        var response = await _client.PostAsJsonAsync(
-            "/api/v1/stokvels",
-            new
-            {
-                name = new string('a', length),
-                contributionAmount = 500
-            });
+   [Theory]
+[InlineData(100, 201)]
+[InlineData(101, 400)]
+public async Task A_stokvel_name_is_accepted_at_100_characters_and_rejected_at_101(
+    int length,
+    int expected)
+{
+    // Create a real user in the test database.
+    var creator = await _client.CreateUserAsync(
+        "Name Boundary Creator");
 
-        Assert.Equal((HttpStatusCode)expected, response.StatusCode);
-    }
+    // Authenticate the request as that user.
+    _client.UseTestUser(creator.Id);
 
+    // Test the maximum allowed stokvel name length.
+    var response = await _client.PostAsJsonAsync(
+        "/api/v1/stokvels",
+        new
+        {
+            name = new string('a', length),
+            contributionAmount = 500
+        });
+
+    Assert.Equal(
+        (HttpStatusCode)expected,
+        response.StatusCode);
+}
     [Fact]
     public async Task The_smallest_positive_contribution_amount_is_accepted()
     {

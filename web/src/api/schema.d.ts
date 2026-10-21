@@ -529,6 +529,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the authenticated user's profile */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["MeProfileResponse"];
+                        "application/json": components["schemas"]["MeProfileResponse"];
+                        "text/json": components["schemas"]["MeProfileResponse"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ProblemDetails"];
+                        "application/json": components["schemas"]["ProblemDetails"];
+                        "text/json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/home": {
         parameters: {
             query?: never;
@@ -1790,6 +1839,12 @@ export interface components {
             role: string;
             /** Format: date-time */
             joinedAtUtc: string;
+        };
+        MeProfileResponse: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            email: string;
         };
         PagedResponseOfContributionListItem: {
             items: components["schemas"]["ContributionListItem"][];

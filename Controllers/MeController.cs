@@ -29,6 +29,40 @@ public sealed class MeController : ControllerBase
         _timeProvider = timeProvider;
     }
 
+[HttpGet]
+[EndpointSummary("Get the authenticated user's profile")]
+[ProducesResponseType<MeProfileResponse>(
+    StatusCodes.Status200OK)]
+[ProducesResponseType(
+    StatusCodes.Status401Unauthorized)]
+public async Task<ActionResult<MeProfileResponse>> GetMe(
+    CancellationToken cancellationToken)
+{
+    var userIdValue =
+        User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? User.FindFirstValue("sub");
+
+    if (!Guid.TryParse(userIdValue, out var userId))
+    {
+        return Unauthorized();
+    }
+
+    var profile = await _db.Users
+        .AsNoTracking()
+        .Where(user => user.Id == userId)
+        .Select(user => new MeProfileResponse(
+            user.Id,
+            user.Name,
+            user.Email))
+        .FirstOrDefaultAsync(cancellationToken);
+
+    if (profile is null)
+    {
+        return Unauthorized();
+    }
+
+    return Ok(profile);
+}
 
     private static long ToCents(decimal amount)
     {
