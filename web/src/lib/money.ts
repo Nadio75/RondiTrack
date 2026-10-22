@@ -20,3 +20,39 @@ export function formatCents(cents: number): string {
 
   return zar.format(decimal as `${number}`)
 }
+
+
+export function parseRandsToCents(value: string): number {
+  const trimmed = value.trim()
+
+  if (!/^\d+(?:\.\d{1,2})?$/.test(trimmed)) {
+    throw new RangeError(
+      'Enter a valid amount with no more than two decimal places',
+    )
+  }
+
+  const [rands, cents = ''] = trimmed.split('.')
+
+  const amount =
+    BigInt(rands) * 100n +
+    BigInt(cents.padEnd(2, '0'))
+
+  if (amount > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError('Amount is too large')
+  }
+
+  return Number(amount)
+}
+
+
+export function centsToInput(cents: number): string {
+  if (!Number.isSafeInteger(cents) || cents < 0) {
+    throw new RangeError('Amount must be a non-negative safe integer')
+  }
+
+  const wholeRands = Math.floor(cents / 100)
+  const remainingCents = cents % 100
+
+  return `${wholeRands}.${String(remainingCents).padStart(2, '0')}`
+}
+
