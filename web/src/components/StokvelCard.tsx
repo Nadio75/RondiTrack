@@ -1,6 +1,7 @@
 
 import type { HomeStokvel } from '@/api/types'
 import { DueCountdown } from '@/components/DueCountdown'
+import { RecordContributionForm } from '@/components/RecordContributionForm'
 import {
   Card,
   CardContent,
@@ -139,6 +140,7 @@ export function StokvelCard({ stokvel }: StokvelCardProps) {
             Manage contributions (coming soon)
           </Button>
         )}
+        <RecordContributionForm stokvel={stokvel} />
       </CardContent>
     </Card>
   )

@@ -147,3 +147,90 @@ export function useCreateStokvel() {
     },
   })
 }
+export type RecordContributionInput = {
+  stokvelId: string
+  cycleId: string
+  userId: string
+  amountInCents: number
+  idempotencyKey: string
+}
+
+export function useRecordContribution() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    retry: false,
+
+    mutationFn: async ({
+      stokvelId,
+      cycleId,
+      userId,
+      amountInCents,
+      idempotencyKey,
+    }: RecordContributionInput) => {
+      const result = await api.POST(
+        '/api/v1/stokvels/{id}/cycles/{cycleId}/contributions',
+        {
+          params: {
+            path: {
+              id: stokvelId,
+              cycleId,
+            },
+            header: {
+              'Idempotency-Key': idempotencyKey,
+            },
+          },
+          body: {
+            userId,
+            amountInCents,
+          },
+        },
+      )
+
+      return unwrap(result)
+    },
+
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['home'],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [
+            'contributions',
+            variables.stokvelId,
+            variables.cycleId,
+          ],
+        }),
+      ])
+    },
+  })
+}
+export function useMembers(stokvelId: string | null) {
+  return useInfiniteQuery({
+    queryKey: ['members', stokvelId],
+    enabled: Boolean(stokvelId),
+    initialPageParam: '' as string,
+
+    queryFn: async ({ pageParam }) => {
+      return unwrap(
+        await api.GET('/api/v1/stokvels/{id}/members', {
+          params: {
+            path: {
+              id: stokvelId!,
+            },
+            query: {
+              page_size: 100,
+              ...(pageParam
+                ? { page_token: pageParam }
+                : {}),
+            },
+          },
+        }),
+      )
+    },
+
+    getNextPageParam: (lastPage) =>
+      lastPage.nextPageToken || undefined,
+  })
+}

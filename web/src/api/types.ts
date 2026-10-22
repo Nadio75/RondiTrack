@@ -15,3 +15,9 @@ export type ContributionItem =
 
 export type ContributionCycle =
   components['schemas']['ContributionCycleResponse']
+
+  export type MeProfile =
+  components['schemas']['MeProfileResponse']
+
+export type MemberListItem =
+  components['schemas']['MemberListItem']

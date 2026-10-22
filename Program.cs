@@ -47,59 +47,91 @@ builder.Services
         options.JsonSerializerOptions.NumberHandling =
             JsonNumberHandling.Strict;
     });
-    builder.Services.Configure<ApiBehaviorOptions>(options =>
+builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
-    options.InvalidModelStateResponseFactory = context =>
+options.InvalidModelStateResponseFactory = context =>
+{
+    var errors = new ModelStateDictionary();
+
+    foreach (var entry in context.ModelState)
     {
-        var errors = new ModelStateDictionary();
+        var key = entry.Key;
 
-        foreach (var entry in context.ModelState)
+        if (!string.IsNullOrWhiteSpace(key))
         {
-            var key = entry.Key;
+            var dot = key.LastIndexOf('.');
 
-            if (!string.IsNullOrWhiteSpace(key))
-            {
-                var dot = key.LastIndexOf('.');
+            var prefix = dot >= 0
+                ? key[..(dot + 1)]
+                : string.Empty;
 
-                var prefix = dot >= 0
-                    ? key[..(dot + 1)]
-                    : string.Empty;
+            var property = dot >= 0
+                ? key[(dot + 1)..]
+                : key;
 
-                var property = dot >= 0
-                    ? key[(dot + 1)..]
-                    : key;
-
-                key = prefix +
-                    JsonNamingPolicy.CamelCase.ConvertName(property);
-            }
-
-            foreach (var error in entry.Value?.Errors
-                         ?? Enumerable.Empty<ModelError>())
-            {
-                errors.AddModelError(
-                    key,
-                    string.IsNullOrWhiteSpace(error.ErrorMessage)
-                        ? "The supplied value is invalid."
-                        : error.ErrorMessage);
-            }
+            key = prefix +
+                JsonNamingPolicy.CamelCase.ConvertName(property);
         }
 
-        var problem = new ValidationProblemDetails(errors)
+        foreach (var error in entry.Value?.Errors
+                     ?? Enumerable.Empty<ModelError>())
         {
-            Status = StatusCodes.Status400BadRequest,
-            Title = "One or more validation errors occurred."
-        };
+            errors.AddModelError(
+                key,
+                string.IsNullOrWhiteSpace(error.ErrorMessage)
+                    ? "The supplied value is invalid."
+                    : error.ErrorMessage);
+        }
+    }
 
-        return new ObjectResult(problem)
-        {
-            StatusCode = StatusCodes.Status400BadRequest,
-            ContentTypes = { "application/problem+json" }
-        };
+    var problem = new ValidationProblemDetails(errors)
+    {
+        Status = StatusCodes.Status400BadRequest,
+        Title = "One or more validation errors occurred."
     };
+
+    return new ObjectResult(problem)
+    {
+        StatusCode = StatusCodes.Status400BadRequest,
+        ContentTypes = { "application/problem+json" }
+    };
+};
 });
 
 builder.Services.AddOpenApi(options =>
 {
+    // Assignment 7.4:
+    // The Idempotency-Key header is required by our API contract.
+    // Document it as required without changing the existing
+    // runtime behavior (missing header returns HTTP 422).
+    options.AddOperationTransformer((operation, context, cancellationToken) =>
+    {
+        var route = context.Description.RelativePath ?? "";
+
+        if (context.Description.HttpMethod == "POST" &&
+            route.Contains("stokvels/{id}/cycles/{cycleId}/contributions",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (operation.Parameters is not null)
+            {
+                foreach (var parameter in operation.Parameters)
+                {
+                    if (string.Equals(
+                        parameter.Name,
+                        "Idempotency-Key",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+if (parameter is Microsoft.OpenApi.OpenApiParameter editableParameter)
+{
+    editableParameter.Required = true;
+}                    }
+                }
+            }
+        }
+
+        return Task.CompletedTask;
+    });
+
     options.AddSchemaTransformer((schema, context, cancellationToken) =>
     {
         if (context.JsonTypeInfo.Type == typeof(decimal) ||

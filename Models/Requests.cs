@@ -1,10 +1,25 @@
+
 namespace RondiTrack.Models;
 
-// A 'record' is a lightweight class built for holding data, with built-in
-// equality and a compact syntax. Perfect for "just carry these values."
-public record CreateStokvelRequest(string Name, decimal ContributionAmount);
-public record AddMemberRequest(Guid UserId);
-public record UpdateContributionRequest(decimal ContributionAmount);
+public record CreateStokvelRequest(
+    string Name,
+    decimal ContributionAmount
+);
 
-// What a caller sends in to record a contribution — StokvelId comes from the route.
-public record ContributionRequest(Guid UserId, decimal Amount, Guid ContributionCycleId );
+public record AddMemberRequest(Guid UserId);
+
+public record UpdateContributionRequest(
+    decimal ContributionAmount
+);
+
+public record ContributionRequest(
+    Guid UserId,
+    decimal Amount,
+    Guid ContributionCycleId
+);
+
+// Assignment 7.4: request body for the new cycle-specific endpoint.
+public record RecordCycleContributionRequest(
+    Guid UserId,
+    int AmountInCents
+);

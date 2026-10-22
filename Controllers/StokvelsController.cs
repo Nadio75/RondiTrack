@@ -13,6 +13,7 @@ using RondiTrack.Authorization;
 using System.Security.Claims;
 using RondiTrack.Common;
 using Microsoft.AspNetCore.Authorization;
+using RondiTrack.Validation;
 
 [ApiController]
 [Route(ApiRoutes.V1 + "/stokvels")]
@@ -245,49 +246,49 @@ public class StokvelsController : ControllerBase
     [ProducesResponseType<StokvelResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [Authorize]
-public async Task<ActionResult<StokvelResponse>> Create(
+    public async Task<ActionResult<StokvelResponse>> Create(
     CreateStokvelRequest request)
-{
-    var userIdValue =
-        User.FindFirstValue(ClaimTypes.NameIdentifier)
-        ?? User.FindFirstValue("sub");
-
-    if (!Guid.TryParse(userIdValue, out var creatorId))
     {
-        return Unauthorized();
+        var userIdValue =
+            User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        if (!Guid.TryParse(userIdValue, out var creatorId))
+        {
+            return Unauthorized();
+        }
+
+        Stokvel stokvel;
+
+        try
+        {
+            stokvel = new Stokvel(
+                request.Name,
+                request.ContributionAmount);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new BusinessRuleViolationException(ex.Message);
+        }
+
+        _db.Stokvels.Add(stokvel);
+
+        _db.StokvelMembers.Add(
+            new StokvelMember(
+                stokvel.Id,
+                creatorId,
+                "Chairperson"));
+
+        await _db.SaveChangesAsync();
+        stokvel.LoadMembers(new[] { creatorId });
+
+        var response = StokvelMapper.ToResponse(stokvel);
+
+        return CreatedAtAction(
+            nameof(GetById),
+            new { id = stokvel.Id },
+            response);
     }
-
-    Stokvel stokvel;
-
-    try
-    {
-        stokvel = new Stokvel(
-            request.Name,
-            request.ContributionAmount);
-    }
-    catch (ArgumentException ex)
-    {
-        throw new BusinessRuleViolationException(ex.Message);
-    }
-
-   _db.Stokvels.Add(stokvel);
-
-_db.StokvelMembers.Add(
-    new StokvelMember(
-        stokvel.Id,
-        creatorId,
-        "Chairperson"));
-
-await _db.SaveChangesAsync();
-    stokvel.LoadMembers(new[] { creatorId });
-
-    var response = StokvelMapper.ToResponse(stokvel);
-
-    return CreatedAtAction(
-        nameof(GetById),
-        new { id = stokvel.Id },
-        response);
-}
 
     [HttpPut("{id}")]
     [EndpointSummary("Replace a stokvel's name and contribution amount")]
@@ -488,6 +489,93 @@ await _db.SaveChangesAsync();
         var response = await _contributionService.ExecuteAsync(id, idempotencyKey, request);
         return CreatedAtAction(nameof(GetById), new { id }, response);
     }
+
+
+    [HttpPost("{id}/cycles/{cycleId}/contributions")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(
+        RondiTrack.Common.RateLimitPolicies.Financial)]
+    [EndpointSummary("Record a contribution for a specific cycle")]
+    [ProducesResponseType<ContributionResponse>(
+        StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(
+        StatusCodes.Status400BadRequest,
+        "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(
+        StatusCodes.Status409Conflict,
+        "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(
+        StatusCodes.Status422UnprocessableEntity,
+        "application/problem+json")]
+    public async Task<IActionResult> RecordCycleContribution(
+        Guid id,
+        Guid cycleId,
+    [FromHeader(Name = "Idempotency-Key")]
+string? idempotencyKey,
+        [FromBody] RecordCycleContributionRequest request)
+    {
+        var memberCheck = await CheckStokvelAccessAsync(id, "Member");
+
+        if (memberCheck is not null)
+            return memberCheck;
+
+        var callerIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        if (!Guid.TryParse(callerIdValue, out var callerId))
+        {
+            return Unauthorized(new ProblemDetails
+            {
+                Status = StatusCodes.Status401Unauthorized,
+                Title = "Authentication required",
+                Detail = "A valid authenticated user ID is required."
+            });
+        }
+
+        if (request.UserId != callerId)
+        {
+            var elevatedCheck = await CheckStokvelAccessAsync(
+                id, "TreasurerOrChairperson");
+
+            if (elevatedCheck is not null)
+                return elevatedCheck;
+        }
+
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+            throw new BusinessRuleViolationException(
+                "An Idempotency-Key header is required.");
+
+        if (cycleId == Guid.Empty)
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Invalid cycle",
+                Detail = "A valid contribution cycle ID is required."
+            });
+
+        if (request.AmountInCents <= 0)
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Invalid amount",
+                Detail = "Amount must be greater than zero."
+            });
+
+        var amountInRands = request.AmountInCents / 100m;
+
+        var existingRequest = new ContributionRequest(
+            request.UserId,
+            amountInRands,
+            cycleId);
+
+        var response = await _contributionService.ExecuteAsync(
+            id,
+            idempotencyKey,
+            existingRequest);
+
+        return CreatedAtAction(nameof(GetById), new { id }, response);
+    }
+
+
     [HttpGet("{id}/cycles/{cycleId}/payout")]
     [EndpointSummary("Get the payout for a contribution cycle")]
     [EndpointDescription("""
@@ -726,5 +814,6 @@ await _db.SaveChangesAsync();
             _ => StatusCode(StatusCodes.Status500InternalServerError)
         };
     }
-}
 
+
+}
