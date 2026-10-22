@@ -3,6 +3,8 @@ type ProblemDetails = {
   detail?: string
   status?: number
   errors?: Record<string, string[]>
+  correlationId?: string
+  traceId?: string
 }
 
 const defaultMessages: Record<number, string> = {
@@ -10,8 +12,9 @@ const defaultMessages: Record<number, string> = {
   401: 'Your session has expired. Please sign in again.',
   403: 'You do not have permission to perform this action.',
   404: 'The requested information could not be found.',
-  409: 'This action conflicts with existing information.',
-  429: 'Too many requests. Please try again later.',
+  409: 'This contribution may already have been recorded. Check the contribution history before submitting again.',
+  422: 'Please check the contribution details and correct any invalid fields.',
+  429: 'Too many requests. Please wait before trying again.',
   500: 'The server encountered an error. Please try again.',
   503: 'The service is temporarily unavailable.',
 }
@@ -19,16 +22,22 @@ const defaultMessages: Record<number, string> = {
 export class ApiError extends Error {
   readonly status: number
   readonly retryAfter: number | null
+  readonly correlationId: string | null
+  readonly fieldErrors: Record<string, string[]>
 
   constructor(
     status: number,
     message: string,
     retryAfter: number | null = null,
+    correlationId: string | null = null,
+    fieldErrors: Record<string, string[]> = {},
   ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.retryAfter = retryAfter
+    this.correlationId = correlationId
+    this.fieldErrors = fieldErrors
   }
 }
 
@@ -44,7 +53,7 @@ export async function createApiError(
     const seconds = Number(retryAfterHeader)
 
     if (Number.isFinite(seconds) && seconds >= 0) {
-      retryAfter = seconds
+      retryAfter = Math.ceil(seconds)
     } else {
       const date = Date.parse(retryAfterHeader)
 
@@ -65,12 +74,19 @@ export async function createApiError(
     // The API may return an empty or non-JSON error response.
   }
 
-  const validationMessage = problem?.errors
-    ? Object.values(problem.errors)
-        .flat()
-        .filter((message) => typeof message === 'string')
-        .join(' ')
-    : ''
+  const fieldErrors = problem?.errors ?? {}
+
+  const validationMessage = Object.values(fieldErrors)
+    .flat()
+    .filter((message) => typeof message === 'string')
+    .join(' ')
+
+  const correlationId =
+    response.headers.get('X-Correlation-ID') ||
+    response.headers.get('X-Correlation-Id') ||
+    problem?.correlationId ||
+    problem?.traceId ||
+    null
 
   const message =
     validationMessage ||
@@ -79,5 +95,11 @@ export async function createApiError(
     defaultMessages[status] ||
     `Request failed (${status}).`
 
-  return new ApiError(status, message, retryAfter)
+  return new ApiError(
+    status,
+    message,
+    retryAfter,
+    correlationId,
+    fieldErrors,
+  )
 }

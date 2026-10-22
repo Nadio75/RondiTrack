@@ -3167,3 +3167,101 @@ Users can sign in, create a stokvel, automatically become its Chairperson, and s
 The implementation also includes automatic token refresh, typed API requests, query caching, error handling, and loading skeletons.
 
 All 176 backend tests and 35 frontend tests passed in the latest verified runs.
+
+## Assignment 7.4 — Record a Contribution
+
+### Idempotency contract
+
+The Record Contribution feature allows an authenticated stokvel member or authorized treasurer to record a contribution against an open contribution cycle.
+
+**Endpoint**
+
+`POST /api/v1/stokvels/{id}/cycles/{cycleId}/contributions`
+
+**Request body**
+
+```json
+{
+  "userId": "33333333-3333-4333-8333-333333333333",
+  "amountInCents": 15050
+}
+```
+
+**Required header**
+
+`Idempotency-Key: <unique-payment-intent-id>`
+
+The frontend generates a unique idempotency key for each new payment intention.
+
+The purpose of this key is to prevent a contribution from being recorded twice when a request is retried because of a network failure or authentication refresh.
+
+The expected contract is:
+
+- Same key and same request: replay the original result without creating another contribution.
+- Same key and different request: return HTTP 409 Conflict.
+- New key for a contribution already recorded for the same member and cycle: return HTTP 409 Conflict.
+- Missing idempotency key: return HTTP 422 Unprocessable Entity.
+- Rate limit exceeded: return HTTP 429 with a Retry-After header.
+
+The frontend retains the original key when retrying an unchanged payment. Changing the member, amount, or cycle creates a new payment intention.
+
+### Idempotency proof
+
+Automated tests verify the contribution submission contract.
+
+**Backend verification**
+
+- The backend test suite passed all 181 tests.
+- The contribution endpoint is covered by integration tests.
+- Tests use PostgreSQL through Docker Testcontainers.
+
+**Frontend verification**
+
+- The frontend test suite passed all 62 tests.
+- Exact money conversion is tested, including round-trip conversion.
+- HTTP tests verify that `15050` cents is sent with the `Idempotency-Key` header.
+- A simulated network failure followed by a retry preserves the same key.
+- A simulated HTTP 401 response triggers authentication refresh and retries the contribution using the original key.
+- Changing a payment amount generates a new key, even when the original amount is subsequently restored.
+- HTTP 409, 422, and 429 responses are tested.
+
+**Verification commands**
+
+From the repository root:
+
+```powershell
+dotnet test
+```
+
+From the `web` directory:
+
+```powershell
+npm.cmd test -- --run
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run build
+```
+
+### Optimistic or not
+
+The contribution form does **not** use an optimistic update.
+
+An optimistic update would immediately show the contribution as successfully recorded before receiving confirmation from the server.
+
+This implementation waits for the server to confirm success before displaying the success message.
+
+After a successful contribution, the frontend invalidates the relevant TanStack Query cache entries so that the home dashboard and contribution history can fetch updated information.
+
+This approach was selected because contributions represent financial records. Showing a contribution as successful before the server confirms it could mislead the user.
+
+### Known gaps — Assignment 7.4
+
+The following items remain relevant for future improvements:
+
+- A full manual browser demonstration should confirm the feature against the running backend and PostgreSQL database.
+- Network interruption and authentication refresh have automated coverage, but should also be demonstrated in a browser where practical.
+- The frontend currently handles rate limiting with a countdown; more advanced retry scheduling could be added later.
+- Existing C# nullable-property initialization warnings remain in the domain project.
+- Dependency audit findings should be reviewed separately before a production deployment.
+
+These items do not change the automated test results reported above.
