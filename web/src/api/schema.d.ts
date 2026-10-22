@@ -1206,6 +1206,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stokvels/{id}/cycles/{cycleId}/contributions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List contributions for a cycle (paged)
+         * @description Returns contributions recorded for the given cycle, paged and sorted in the database.
+         *     Default page size is 20, maximum is 100. Negative page_size returns 400.
+         *     The page_token is opaque. An empty nextPageToken means there are no more results.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    page_size?: number | string;
+                    page_token?: string;
+                    sort?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                    cycleId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["PagedResponseOfContributionListItem"];
+                        "application/json": components["schemas"]["PagedResponseOfContributionListItem"];
+                        "text/json": components["schemas"]["PagedResponseOfContributionListItem"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Record a contribution for a specific cycle */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    id: string;
+                    cycleId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RecordCycleContributionRequest"];
+                    "text/json": components["schemas"]["RecordCycleContributionRequest"];
+                    "application/*+json": components["schemas"]["RecordCycleContributionRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ContributionResponse"];
+                        "application/json": components["schemas"]["ContributionResponse"];
+                        "text/json": components["schemas"]["ContributionResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ValidationProblemDetails"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Unprocessable Entity */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stokvels/{id}/cycles/{cycleId}/payout": {
         parameters: {
             query?: never;
@@ -1365,65 +1484,6 @@ export interface paths {
                 };
             };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/stokvels/{id}/cycles/{cycleId}/contributions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List contributions for a cycle (paged)
-         * @description Returns contributions recorded for the given cycle, paged and sorted in the database.
-         *     Default page size is 20, maximum is 100. Negative page_size returns 400.
-         *     The page_token is opaque. An empty nextPageToken means there are no more results.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    page_size?: number | string;
-                    page_token?: string;
-                    sort?: string;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                    cycleId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain": components["schemas"]["PagedResponseOfContributionListItem"];
-                        "application/json": components["schemas"]["PagedResponseOfContributionListItem"];
-                        "text/json": components["schemas"]["PagedResponseOfContributionListItem"];
-                    };
-                };
-                /** @description Bad Request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/problem+json": components["schemas"]["ProblemDetails"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1877,6 +1937,12 @@ export interface components {
             status?: null | number | string;
             detail?: null | string;
             instance?: null | string;
+        };
+        RecordCycleContributionRequest: {
+            /** Format: uuid */
+            userId: string;
+            /** Format: int32 */
+            amountInCents: number | string;
         };
         RegisterRequest: {
             name?: string;
