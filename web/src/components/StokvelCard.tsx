@@ -2,6 +2,7 @@
 import type { HomeStokvel } from '@/api/types'
 import { DueCountdown } from '@/components/DueCountdown'
 import { RecordContributionForm } from '@/components/RecordContributionForm'
+
 import {
   Card,
   CardContent,
@@ -15,6 +16,14 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { toSafeCents } from '@/lib/apiMoney'
 import { formatCents } from '@/lib/money'
 import { formatSastDateTime } from '@/lib/dates'
+
+import {
+  Users,
+  CalendarDays,
+  Wallet,
+  CheckCircle2,
+  AlertCircle,
+} from 'lucide-react'
 
 type StokvelCardProps = {
   stokvel: HomeStokvel
@@ -43,14 +52,20 @@ export function StokvelCard({ stokvel }: StokvelCardProps) {
     stokvel.role.toLowerCase() === 'treasurer'
 
   return (
-    <Card className="min-w-0">
-      <CardHeader>
+    <Card className="min-w-0 overflow-hidden rounded-3xl border-border bg-card shadow-sm">
+      <CardHeader className="space-y-4 pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <CardTitle className="min-w-0 break-words text-lg">
-            {stokvel.name}
-          </CardTitle>
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rt-teal text-white dark:text-[#142523]">
+              <Users className="h-6 w-6" />
+            </div>
 
-          <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+            <CardTitle className="min-w-0 break-words text-xl font-bold">
+              {stokvel.name}
+            </CardTitle>
+          </div>
+
+          <span className="rounded-full bg-rt-teal px-4 py-2 text-xs font-semibold text-white dark:text-[#142523]">
             {isTreasurer
               ? "You're the Treasurer"
               : stokvel.role}
@@ -64,12 +79,13 @@ export function StokvelCard({ stokvel }: StokvelCardProps) {
         />
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         <div>
           <p className="text-sm text-muted-foreground">
             Contribution amount
           </p>
-          <p className="text-xl font-semibold">
+
+          <p className="text-2xl font-bold text-rt-teal">
             {contributionAmount}
           </p>
         </div>
@@ -77,52 +93,66 @@ export function StokvelCard({ stokvel }: StokvelCardProps) {
         {cycle ? (
           <section
             aria-label="Current contribution cycle"
-            className="space-y-3 rounded-xl border border-border bg-muted/40 p-4"
+            className="space-y-4 rounded-2xl border border-border bg-rt-cycle p-5"
           >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h4 className="font-semibold">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h4 className="font-bold">
                 Current cycle: {cycle.period}
               </h4>
+
               <StatusBadge status={cycle.status} />
             </div>
-             <DueCountdown
-                dueAtUtc={cycle.dueAtUtc}
-                status={cycle.status}
-              />
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="text-sm text-muted-foreground">
+            <DueCountdown
+              dueAtUtc={cycle.dueAtUtc}
+              status={cycle.status}
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CheckCircle2 className="h-4 w-4 text-rt-teal" />
                   Paid
                 </p>
-                <p className="font-semibold">
+
+                <p className="break-words text-xl font-bold text-rt-teal">
                   {paidAmount}
                 </p>
               </div>
 
-              <div>
-                <p className="text-sm text-muted-foreground">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <AlertCircle className="h-4 w-4 text-rt-terracotta" />
                   Still owed
                 </p>
-                <p className="font-semibold">
+
+                <p className="break-words text-xl font-bold text-rt-terracotta">
                   {owedAmount}
                 </p>
               </div>
             </div>
 
-            <p className="text-sm">
-              <span className="font-medium">
-                Cycle closes:
-              </span>{' '}
-              {formatSastDateTime(cycle.dueAtUtc)}
-            </p>
+            <div className="space-y-2 border-t border-border/60 pt-3 text-sm">
+              <p className="flex items-start gap-2">
+                <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-rt-teal" />
+                <span>
+                  <span className="font-semibold">
+                    Cycle closes:
+                  </span>{' '}
+                  {formatSastDateTime(cycle.dueAtUtc)}
+                </span>
+              </p>
 
-            <p className="text-sm">
-              <span className="font-medium">
-                Next payout:
-              </span>{' '}
-              {formatSastDateTime(cycle.nextPayoutDate)}
-            </p>
+              <p className="flex items-start gap-2">
+                <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-rt-teal" />
+                <span>
+                  <span className="font-semibold">
+                    Next payout:
+                  </span>{' '}
+                  {formatSastDateTime(cycle.nextPayoutDate)}
+                </span>
+              </p>
+            </div>
           </section>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -140,6 +170,7 @@ export function StokvelCard({ stokvel }: StokvelCardProps) {
             Manage contributions (coming soon)
           </Button>
         )}
+
         <RecordContributionForm stokvel={stokvel} />
       </CardContent>
     </Card>
