@@ -6,102 +6,131 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* =========================================
+   RONDITRACK LIGHT THEME
+   Warm cream, teal, yellow, terracotta
+   ========================================= */
+
 :root {
   font-family: "Geist Variable", system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 
-  --background: #faf7f2;
-  --foreground: #38281f;
+  --background: #fff4e5;
+  --foreground: #30211d;
 
-  --card: #ffffff;
-  --card-foreground: #38281f;
+  --card: #fff9f0;
+  --card-foreground: #30211d;
 
-  --popover: #ffffff;
-  --popover-foreground: #38281f;
+  --popover: #fff9f0;
+  --popover-foreground: #30211d;
 
-  --primary: #38281f;
-  --primary-foreground: #faf7f2;
+  --primary: #087f79;
+  --primary-foreground: #ffffff;
 
-  --secondary: #e8dccb;
-  --secondary-foreground: #38281f;
+  --secondary: #ffda75;
+  --secondary-foreground: #30211d;
 
-  --muted: #f0e9df;
-  --muted-foreground: #654c3b;
+  --muted: #ffedcc;
+  --muted-foreground: #695349;
 
-  --accent: #e8dccb;
-  --accent-foreground: #38281f;
+  --accent: #ffe3a1;
+  --accent-foreground: #30211d;
 
-  --destructive: #8f2727;
+  --destructive: #c65d3b;
 
-  --border: #d2c0ad;
-  --input: #d2c0ad;
-  --ring: #80634f;
+  --border: #d8bda8;
+  --input: #d8bda8;
+  --ring: #0a8f87;
 
-  --chart-1: #e8dccb;
-  --chart-2: #b9a38f;
-  --chart-3: #80634f;
-  --chart-4: #654c3b;
-  --chart-5: #38281f;
+  --chart-1: #087f79;
+  --chart-2: #ffd166;
+  --chart-3: #c65d3b;
+  --chart-4: #d99a62;
+  --chart-5: #6e4d3d;
 
-  --radius: 0.875rem;
+  --radius: 1rem;
 
-  --sidebar: #f0e9df;
-  --sidebar-foreground: #38281f;
-  --sidebar-primary: #38281f;
-  --sidebar-primary-foreground: #faf7f2;
-  --sidebar-accent: #e8dccb;
-  --sidebar-accent-foreground: #38281f;
-  --sidebar-border: #d2c0ad;
-  --sidebar-ring: #80634f;
+  --sidebar: #fff0d9;
+  --sidebar-foreground: #30211d;
+  --sidebar-primary: #087f79;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ffda75;
+  --sidebar-accent-foreground: #30211d;
+  --sidebar-border: #d8bda8;
+  --sidebar-ring: #0a8f87;
+
+  /* Custom RondiTrack colors */
+  --rt-teal: #087f79;
+  --rt-teal-bright: #2ec4b6;
+  --rt-yellow: #ffd166;
+  --rt-terracotta: #c65d3b;
+  --rt-cycle: #ffe4a8;
+  --rt-success: #087f79;
 }
+
+/* =========================================
+   RONDITRACK DARK THEME
+   Chocolate brown with turquoise accents
+   ========================================= */
 
 .dark {
   color-scheme: dark;
 
-  --background: #241b17;
-  --foreground: #f5e9da;
+  --background: #1b1413;
+  --foreground: #fff4e5;
 
-  --card: #382b24;
-  --card-foreground: #f5e9da;
+  --card: #30221f;
+  --card-foreground: #fff4e5;
 
-  --popover: #382b24;
-  --popover-foreground: #f5e9da;
+  --popover: #30221f;
+  --popover-foreground: #fff4e5;
 
-  --primary: #f5e9da;
-  --primary-foreground: #241b17;
+  --primary: #2ec4b6;
+  --primary-foreground: #142523;
 
-  --secondary: #4b382e;
-  --secondary-foreground: #f5e9da;
+  --secondary: #49342d;
+  --secondary-foreground: #fff4e5;
 
-  --muted: #4b382e;
-  --muted-foreground: #e0cdb9;
+  --muted: #49342d;
+  --muted-foreground: #ddc6b8;
 
-  --accent: #4b382e;
-  --accent-foreground: #f5e9da;
+  --accent: #594036;
+  --accent-foreground: #fff4e5;
 
-  --destructive: #ffb4a8;
+  --destructive: #ff9274;
 
-  --border: #796250;
-  --input: #796250;
-  --ring: #d4bca5;
+  --border: #74554a;
+  --input: #74554a;
+  --ring: #2ec4b6;
 
-  --chart-1: #f5e9da;
-  --chart-2: #d4bca5;
-  --chart-3: #b9a38f;
-  --chart-4: #80634f;
-  --chart-5: #654c3b;
+  --chart-1: #2ec4b6;
+  --chart-2: #ffd166;
+  --chart-3: #ff9274;
+  --chart-4: #e6b58d;
+  --chart-5: #b78e7a;
 
-  --sidebar: #382b24;
-  --sidebar-foreground: #f5e9da;
-  --sidebar-primary: #f5e9da;
-  --sidebar-primary-foreground: #241b17;
-  --sidebar-accent: #4b382e;
-  --sidebar-accent-foreground: #f5e9da;
-  --sidebar-border: #796250;
-  --sidebar-ring: #d4bca5;
+  --sidebar: #30221f;
+  --sidebar-foreground: #fff4e5;
+  --sidebar-primary: #2ec4b6;
+  --sidebar-primary-foreground: #142523;
+  --sidebar-accent: #49342d;
+  --sidebar-accent-foreground: #fff4e5;
+  --sidebar-border: #74554a;
+  --sidebar-ring: #2ec4b6;
+
+  --rt-teal: #2ec4b6;
+  --rt-teal-bright: #2ec4b6;
+  --rt-yellow: #ffd166;
+  --rt-terracotta: #ff9274;
+  --rt-cycle: #423029;
+  --rt-success: #2ec4b6;
 }
+
+/* =========================================
+   TAILWIND THEME MAPPING
+   ========================================= */
 
 @theme inline {
   --font-heading: var(--font-sans);
@@ -141,6 +170,12 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  --color-rt-teal: var(--rt-teal);
+  --color-rt-yellow: var(--rt-yellow);
+  --color-rt-terracotta: var(--rt-terracotta);
+  --color-rt-cycle: var(--rt-cycle);
+  --color-rt-success: var(--rt-success);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -149,6 +184,10 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 }
+
+/* =========================================
+   GLOBAL STYLING
+   ========================================= */
 
 @layer base {
   * {

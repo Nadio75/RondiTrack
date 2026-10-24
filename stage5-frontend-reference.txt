@@ -1,0 +1,906 @@
+﻿
+========== web\src\App.tsx ==========
+
+
+import { useEffect, useState } from 'react'
+import { StokvelCard } from '@/components/StokvelCard'
+import { LoginForm } from '@/components/LoginForm'
+import { ThemeToggle } from '@/theme/ThemeToggle'
+import { useHome } from '@/api/queries'
+import { queryClient } from '@/api/queryClient'
+import {
+  getAccessToken,
+  logout,
+  refreshAccessToken,
+  SessionExpiredError,
+} from '@/auth/session'
+import { CreateStokvelForm } from '@/components/CreateStokvelForm'
+import { DashboardSkeleton } from '@/components/DashboardSkeleton'
+import './App.css'
+
+function Dashboard({ onSignedOut }: { onSignedOut: () => void }) {
+  const home = useHome()
+  const [showCreateForm, setShowCreateForm] = useState(false)
+
+  useEffect(() => {
+    if (home.error instanceof SessionExpiredError) {
+      onSignedOut()
+    }
+  }, [home.error, onSignedOut])
+
+ if (home.isPending) {
+  return <DashboardSkeleton />
+}
+
+  if (home.isError) {
+    if (home.error instanceof SessionExpiredError) {
+      return null
+    }
+
+    return (
+      <div role="alert" className="space-y-3">
+<p>
+  {home.error instanceof Error
+    ? home.error.message
+    : "We couldn't load your dashboard."}
+</p>
+        <button
+          type="button"
+          onClick={() => void home.refetch()}
+          className="rounded-md border px-4 py-2"
+        >
+          Try again
+        </button>
+      </div>
+    )
+  }
+
+  const stokvels = home.data.stokvels
+
+  return (
+  <section aria-labelledby="stokvels-heading">
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <h2
+        id="stokvels-heading"
+        className="text-2xl font-semibold"
+      >
+        My Stokvels
+      </h2>
+
+      {!showCreateForm && (
+        <button
+          type="button"
+          onClick={() => setShowCreateForm(true)}
+          className="rounded-md bg-primary px-4 py-2 text-primary-foreground"
+        >
+          + Create Stokvel
+        </button>
+      )}
+    </div>
+
+    {showCreateForm && (
+      <div className="mb-6">
+        <CreateStokvelForm
+          onCancel={() => setShowCreateForm(false)}
+          onCreated={() => setShowCreateForm(false)}
+        />
+      </div>
+    )}
+
+    {stokvels.length === 0 ? (
+      <p>
+        You don't belong to any stokvels yet.
+        Create your first stokvel to get started.
+      </p>
+    ) : (
+      <div className="card-grid">
+        {stokvels.map((stokvel) => (
+          <StokvelCard
+            key={stokvel.stokvelId}
+            stokvel={stokvel}
+          />
+        ))}
+      </div>
+    )}
+  </section>
+)
+}
+
+function App() {
+  const [authState, setAuthState] = useState<
+    'checking' | 'signed-in' | 'signed-out'
+  >('checking')
+
+  useEffect(() => {
+    let active = true
+
+    async function restoreSession() {
+      const token = getAccessToken() ?? await refreshAccessToken()
+
+      if (active) {
+        setAuthState(token ? 'signed-in' : 'signed-out')
+      }
+    }
+
+    void restoreSession()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  function handleSignedOut() {
+    queryClient.clear()
+    setAuthState('signed-out')
+  }
+
+  async function handleLogout() {
+    queryClient.clear()
+    setAuthState('signed-out')
+    await logout()
+  }
+
+  function handleLogin() {
+    queryClient.clear()
+    setAuthState('signed-in')
+  }
+
+  return (
+    <main className="app-container space-y-10">
+      <header className="page-header">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">
+              RondiTrack Dashboard
+            </h1>
+            <p className="mt-2 text-muted-foreground">
+              Assignment 7.3 â€” Live RondiTrack Data
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {authState === 'signed-in' && (
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                className="rounded-md border px-4 py-2"
+              >
+                Log out
+              </button>
+            )}
+            <ThemeToggle />
+          </div>
+        </div>
+      </header>
+
+      {authState === 'checking' ? (
+        <p role="status">Checking your session...</p>
+      ) : authState === 'signed-out' ? (
+        <LoginForm onLogin={handleLogin} />
+      ) : (
+        <Dashboard onSignedOut={handleSignedOut} />
+      )}
+    </main>
+  )
+}
+
+export default App
+
+========== web\src\api\client.ts ==========
+
+
+import createClient from 'openapi-fetch'
+import type { paths } from './schema'
+import { authFetch } from '@/auth/session'
+
+export const api = createClient<paths>({
+  baseUrl: import.meta.env.VITE_API_BASE_URL ?? '',
+  fetch: authFetch,
+})
+
+========== web\src\api\types.ts ==========
+
+
+import type { components } from './schema'
+
+export type HomeDashboard =
+  components['schemas']['HomeDashboardResponse']
+
+export type HomeStokvel =
+  components['schemas']['HomeStokvelResponse']
+
+export type HomeCycle =
+  components['schemas']['HomeCycleResponse']
+
+export type ContributionItem =
+  components['schemas']['ContributionListItem']
+
+export type ContributionCycle =
+  components['schemas']['ContributionCycleResponse']
+
+========== web\src\auth\session.ts ==========
+
+
+/**
+ * Access tokens are kept only in memory.
+ *
+ * Single-flight refresh means concurrent requests share one
+ * refresh promise rather than rotating the cookie repeatedly.
+ *
+ * RondiTrack rotates refresh cookies and can revoke a token
+ * family when an already-used refresh token is presented.
+ */
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? "";
+
+let accessToken: string | null = null;
+let inFlightRefresh: Promise<string | null> | null = null;
+let sessionVersion = 0;
+type TokenResponse = {
+  accessToken: string;
+  tokenType: string;
+  expiresIn: number;
+};
+
+export class SessionExpiredError extends Error {
+  constructor() {
+    super("Your session has expired. Please sign in again.");
+    this.name = "SessionExpiredError";
+  }
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+function clearSession(): void {
+  sessionVersion++;
+  accessToken = null;
+}
+
+function apiUrl(path: string): string {
+  return `${API_BASE_URL.replace(/\/$/, "")}${path}`;
+}
+
+export async function login(
+  email: string,
+  password: string,
+): Promise<void> {
+  clearSession();
+
+  const response = await fetch(apiUrl("/api/v1/auth/login"), {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      response.status === 401
+        ? "The email address or password is incorrect."
+        : "Unable to sign in. Please try again.",
+    );
+  }
+
+  const data = (await response.json()) as TokenResponse;
+  accessToken = data.accessToken;
+}
+
+
+async function doRefresh(): Promise<string | null> {
+  const versionAtStart = sessionVersion;
+
+  try {
+    const response = await fetch(apiUrl("/api/v1/auth/refresh"), {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (versionAtStart !== sessionVersion) {
+      return null;
+    }
+
+    if (!response.ok) {
+      clearSession();
+      return null;
+    }
+
+    const data = (await response.json()) as TokenResponse;
+
+    if (versionAtStart !== sessionVersion) {
+      return null;
+    }
+
+    accessToken = data.accessToken;
+    return accessToken;
+  } catch {
+    if (versionAtStart === sessionVersion) {
+      clearSession();
+    }
+
+    return null;
+  }
+}
+
+export function refreshAccessToken(): Promise<string | null> {
+  if (inFlightRefresh) {
+    return inFlightRefresh;
+  }
+
+  const refreshPromise = doRefresh();
+  inFlightRefresh = refreshPromise;
+
+  void refreshPromise.finally(() => {
+    if (inFlightRefresh === refreshPromise) {
+      inFlightRefresh = null;
+    }
+  });
+
+  return refreshPromise;
+}
+
+export async function logout(): Promise<void> {
+  clearSession();
+
+  try {
+    await fetch(apiUrl("/api/v1/auth/logout"), {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    // The browser must remain signed out even if offline.
+  }
+}
+
+/**
+ * Authenticated fetch adapter for openapi-fetch.
+ * A request is retried at most once after a 401.
+ */
+export async function authFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+const request = new Request(input, {
+  ...init,
+  credentials: "include",
+});  const retryableRequest = request.clone();
+
+  let token = accessToken;
+
+  if (!token) {
+    token = await refreshAccessToken();
+    if (!token) {
+      throw new SessionExpiredError();
+    }
+  }
+
+  const firstRequest = request.clone();
+  firstRequest.headers.set("Authorization", `Bearer ${token}`);
+
+  const response = await fetch(firstRequest);
+
+  if (response.status !== 401) {
+    return response;
+  }
+
+  // Another request may already have refreshed the token.
+  const nextToken =
+    accessToken && accessToken !== token
+      ? accessToken
+      : await refreshAccessToken();
+
+  if (!nextToken) {
+    throw new SessionExpiredError();
+  }
+
+  retryableRequest.headers.set(
+    "Authorization",
+    `Bearer ${nextToken}`,
+  );
+
+  const retryResponse = await fetch(retryableRequest);
+
+  if (retryResponse.status === 401) {
+    clearSession();
+    throw new SessionExpiredError();
+  }
+
+  return retryResponse;
+}
+
+========== web\src\components\ContributionList.tsx ==========
+
+
+import { useState } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
+import { DueCountdown } from '@/components/DueCountdown'
+import type {
+    ContributionCycle,
+    ContributionItem,
+} from '@/api/types'
+
+import { Button } from '@/components/ui/button'
+import {
+    Card,
+    CardContent,
+    CardHeader,
+} from '@/components/ui/card'
+import { ContributionCard } from '@/components/ContributionCard'
+import type {
+    DemoContributionStatus,
+} from '@/components/ContributionCard'
+import { StatusBadge } from '@/components/StatusBadge'
+
+import {
+    groupContributionsByCycle,
+} from '@/lib/groupContributions'
+
+import { formatCents } from '@/lib/money'
+import { toSafeCents } from '@/lib/apiMoney'
+import { formatSastDateTime } from '@/lib/dates'
+
+type ContributionListProps = {
+    cycles: readonly ContributionCycle[]
+    contributions: readonly ContributionItem[]
+    demoStatuses?: Readonly<Record<string, DemoContributionStatus>>
+}
+
+export function ContributionList({
+    cycles,
+    contributions,
+    demoStatuses = {},
+}: ContributionListProps) {
+    const groups = groupContributionsByCycle(
+        cycles,
+        contributions,
+    )
+
+    // Store only user overrides, not the grouped data.
+    const [expandedOverrides, setExpandedOverrides] =
+        useState<Record<string, boolean>>({})
+
+    function isExpanded(id: string, status?: string): boolean {
+        const override = expandedOverrides[id]
+
+        if (override !== undefined) {
+            return override
+        }
+
+        return status?.trim().toLowerCase() === 'open'
+    }
+
+    const allExpanded =
+        groups.length > 0 &&
+        groups.every((group) =>
+            isExpanded(group.id, group.cycle?.status),
+        )
+
+    function toggleAll() {
+        const nextExpanded = !allExpanded
+
+        setExpandedOverrides(
+            Object.fromEntries(
+                groups.map((group) => [group.id, nextExpanded]),
+            ),
+        )
+    }
+
+    return (
+        <div className="space-y-4">
+            <div className="flex justify-end">
+                <Button
+                    type="button"
+                    variant="outline"
+                    onClick={toggleAll}
+                    disabled={groups.length === 0}
+                >
+                    {allExpanded ? 'Collapse all' : 'Expand all'}
+                </Button>
+            </div>
+
+            {groups.length === 0 && (
+                <p className="text-muted-foreground">
+                    No contribution cycles yet.
+                </p>
+            )}
+
+            {groups.map((group) => {
+                const cycle = group.cycle
+                const expanded = isExpanded(
+                    group.id,
+                    cycle?.status,
+                )
+
+                const headingId = `cycle-heading-${group.id}`
+                const contentId = `cycle-content-${group.id}`
+
+                return (
+                    <Card
+                        key={group.id}
+                        className="min-w-0"
+                        aria-labelledby={headingId}
+                    >
+                        <CardHeader>
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="min-w-0 space-y-2">
+                                    <h3
+                                        id={headingId}
+                                        className="break-words text-lg font-semibold"
+                                    >
+                                        {cycle
+                                            ? `Cycle: ${cycle.period}`
+                                            : 'Unknown cycle'}
+                                    </h3>
+
+                                    {cycle && (
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <StatusBadge status={cycle.status ?? 'Unknown'} />
+
+                                            <DueCountdown
+                                                dueAtUtc={cycle.dueAtUtc}
+                                                status={cycle.status ?? 'Unknown'}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    aria-expanded={expanded}
+                                    aria-controls={contentId}
+                                    onClick={() =>
+                                        setExpandedOverrides((previous) => ({
+                                            ...previous,
+                                            [group.id]: !expanded,
+                                        }))
+                                    }
+                                >
+                                    {expanded ? (
+                                        <ChevronUp aria-hidden="true" />
+                                    ) : (
+                                        <ChevronDown aria-hidden="true" />
+                                    )}
+                                    {expanded ? 'Collapse' : 'Expand'}
+                                </Button>
+                            </div>
+
+                            {cycle && (
+                                <div className="grid gap-2 pt-2 text-sm sm:grid-cols-3">
+                                    <p>
+                                        <span className="text-muted-foreground">
+                                            Due:
+                                        </span>{' '}
+                                        {formatSastDateTime(cycle.dueAtUtc)}
+                                    </p>
+
+                                    <p>
+                                        <span className="text-muted-foreground">
+                                            Collected:
+                                        </span>{' '}
+                                        {cycle.totalCollectedCents == null
+                                            ? 'Not available'
+                                            : formatCents(
+                                                toSafeCents(
+                                                    cycle.totalCollectedCents,
+                                                ),
+                                            )}
+                                    </p>
+
+                                    <p>
+                                        <span className="text-muted-foreground">
+                                            Amount due:
+                                        </span>{' '}
+                                        {cycle.amountDueCents == null
+                                            ? 'Not available'
+                                            : formatCents(
+                                                toSafeCents(
+                                                    cycle.amountDueCents,
+                                                ),
+                                            )}
+                                    </p>
+                                </div>
+                            )}
+                        </CardHeader>
+
+                        <CardContent>
+                            <div id={contentId} hidden={!expanded}>
+                                {group.contributions.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground">
+                                        No contributions yet.
+                                    </p>
+                                ) : (
+                                    <div className="grid gap-3 md:grid-cols-2">
+                                        {group.contributions.map(
+                                            (contribution) => (
+                                                <ContributionCard
+                                                    key={contribution.id}
+                                                    contribution={contribution}
+                                                    demoStatus={
+                                                        demoStatuses[contribution.id]
+                                                    }
+                                                />
+                                            ),
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </CardContent>
+                    </Card>
+                )
+            })}
+        </div>
+    )
+}
+
+========== web\src\components\CreateStokvelForm.tsx ==========
+
+import { useState, type FormEvent } from 'react'
+import { useCreateStokvel } from '@/api/queries'
+
+type Props = {
+  onCancel: () => void
+  onCreated: () => void
+}
+
+export function CreateStokvelForm({
+  onCancel,
+  onCreated,
+}: Props) {
+  const [name, setName] = useState('')
+  const [amount, setAmount] = useState('500')
+  const createStokvel = useCreateStokvel()
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const contributionAmount = Number(amount)
+    const trimmedName = name.trim()
+
+    if (
+      trimmedName.length === 0 ||
+      trimmedName.length > 100 ||
+      !Number.isFinite(contributionAmount) ||
+      contributionAmount <= 0
+    ) {
+      return
+    }
+
+    try {
+      await createStokvel.mutateAsync({
+        name: trimmedName,
+        contributionAmount,
+      })
+
+      onCreated()
+    } catch {
+      // The mutation error is displayed below.
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(event) => void handleSubmit(event)}
+      className="space-y-4 rounded-lg border p-5"
+    >
+      <h3 className="text-xl font-semibold">
+        Create a New Stokvel
+      </h3>
+
+      <div className="space-y-2">
+        <label htmlFor="stokvel-name" className="block font-medium">
+          Stokvel name
+        </label>
+
+        <input
+          id="stokvel-name"
+          type="text"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={100}
+          required
+          disabled={createStokvel.isPending}
+          placeholder="e.g. Ubuntu Savings Club"
+          className="w-full rounded-md border bg-background px-3 py-2"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="contribution-amount" className="block font-medium">
+          Contribution amount (R)
+        </label>
+
+        <input
+          id="contribution-amount"
+          type="number"
+          min="0.01"
+          step="0.01"
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
+          required
+          disabled={createStokvel.isPending}
+          className="w-full rounded-md border bg-background px-3 py-2"
+        />
+      </div>
+
+      {createStokvel.isError && (
+        <p role="alert" className="text-sm text-red-600">
+          {createStokvel.error.message}
+        </p>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          type="submit"
+          disabled={createStokvel.isPending}
+          className="rounded-md bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50"
+        >
+          {createStokvel.isPending
+            ? 'Creating...'
+            : 'Create Stokvel'}
+        </button>
+
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={createStokvel.isPending}
+          className="rounded-md border px-4 py-2"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  )
+}
+
+========== web\src\components\StokvelCard.tsx ==========
+
+
+import type { HomeStokvel } from '@/api/types'
+import { DueCountdown } from '@/components/DueCountdown'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+
+import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/StatusBadge'
+
+import { toSafeCents } from '@/lib/apiMoney'
+import { formatCents } from '@/lib/money'
+import { formatSastDateTime } from '@/lib/dates'
+
+type StokvelCardProps = {
+  stokvel: HomeStokvel
+}
+
+export function StokvelCard({ stokvel }: StokvelCardProps) {
+  const cycle = stokvel.currentCycle
+
+  const contributionAmount = formatCents(
+    toSafeCents(stokvel.contributionAmountCents),
+  )
+
+  const personalArrears = toSafeCents(
+    stokvel.personalArrearsCents,
+  )
+
+  const paidAmount = cycle
+    ? formatCents(toSafeCents(cycle.paidCents))
+    : null
+
+  const owedAmount = cycle
+    ? formatCents(toSafeCents(cycle.owedCents))
+    : null
+
+  const isTreasurer =
+    stokvel.role.toLowerCase() === 'treasurer'
+
+  return (
+    <Card className="min-w-0">
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <CardTitle className="min-w-0 break-words text-lg">
+            {stokvel.name}
+          </CardTitle>
+
+          <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+            {isTreasurer
+              ? "You're the Treasurer"
+              : stokvel.role}
+          </span>
+        </div>
+
+        <StatusBadge
+          status="Arrears"
+          arrearsCents={personalArrears}
+          className="mt-2"
+        />
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        <div>
+          <p className="text-sm text-muted-foreground">
+            Contribution amount
+          </p>
+          <p className="text-xl font-semibold">
+            {contributionAmount}
+          </p>
+        </div>
+
+        {cycle ? (
+          <section
+            aria-label="Current contribution cycle"
+            className="space-y-3 rounded-xl border border-border bg-muted/40 p-4"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="font-semibold">
+                Current cycle: {cycle.period}
+              </h4>
+              <StatusBadge status={cycle.status} />
+            </div>
+             <DueCountdown
+                dueAtUtc={cycle.dueAtUtc}
+                status={cycle.status}
+              />
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Paid
+                </p>
+                <p className="font-semibold">
+                  {paidAmount}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Still owed
+                </p>
+                <p className="font-semibold">
+                  {owedAmount}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm">
+              <span className="font-medium">
+                Cycle closes:
+              </span>{' '}
+              {formatSastDateTime(cycle.dueAtUtc)}
+            </p>
+
+            <p className="text-sm">
+              <span className="font-medium">
+                Next payout:
+              </span>{' '}
+              {formatSastDateTime(cycle.nextPayoutDate)}
+            </p>
+          </section>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No active contribution cycle.
+          </p>
+        )}
+
+        {isTreasurer && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled
+            className="w-full"
+          >
+            Manage contributions (coming soon)
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
