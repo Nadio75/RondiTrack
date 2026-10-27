@@ -37,9 +37,23 @@ public sealed class CycleClosingIntegrationTests
 
             db.Users.AddRange(fullyPaid, partlyPaid);
             db.Stokvels.Add(stokvel);
+            var fullyPaidMember = new StokvelMember(stokvel.Id, fullyPaid.Id);
+            var partlyPaidMember = new StokvelMember(stokvel.Id, partlyPaid.Id);
+
+            var joinedBeforeDeadline = new DateTime(
+                2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
+
             db.StokvelMembers.AddRange(
-                new StokvelMember(stokvel.Id, fullyPaid.Id),
-                new StokvelMember(stokvel.Id, partlyPaid.Id));
+                fullyPaidMember,
+                partlyPaidMember);
+
+            db.Entry(fullyPaidMember)
+                .Property(m => m.JoinedAtUtc)
+                .CurrentValue = joinedBeforeDeadline;
+
+            db.Entry(partlyPaidMember)
+                .Property(m => m.JoinedAtUtc)
+                .CurrentValue = joinedBeforeDeadline;
             db.ContributionCycles.Add(cycle);
 
             db.Contributions.AddRange(
