@@ -1,4 +1,4 @@
-namespace RondiTrack.Tests;
+﻿namespace RondiTrack.Tests;
 
 using System.Net;
 using System.Net.Http.Json;
@@ -197,7 +197,9 @@ public async Task Rate_limited_contribution_can_be_retried_without_duplicates()
 
     // Verify that the rejected request did not save a contribution.
 {
-    var store = limitedFactory.Services
+    using var scope = limitedFactory.Services.CreateScope();
+
+    var store = scope.ServiceProvider
         .GetRequiredService<IContributionStore>();
 
     var contributions = await store.GetAllAsync();
@@ -226,7 +228,9 @@ public async Task Rate_limited_contribution_can_be_retried_without_duplicates()
 
     // Both contributions should now exist.
 {
-    var store = limitedFactory.Services
+    using var scope = limitedFactory.Services.CreateScope();
+
+    var store = scope.ServiceProvider
         .GetRequiredService<IContributionStore>();
 
     var contributions = await store.GetAllAsync();
@@ -257,7 +261,9 @@ public async Task Rate_limited_contribution_can_be_retried_without_duplicates()
 
     // The idempotent replay must not create a third contribution.
 {
-    var store = limitedFactory.Services
+    using var scope = limitedFactory.Services.CreateScope();
+
+    var store = scope.ServiceProvider
         .GetRequiredService<IContributionStore>();
 
     var contributions = await store.GetAllAsync();

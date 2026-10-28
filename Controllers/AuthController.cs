@@ -164,6 +164,18 @@ public async Task<IActionResult> Login(
         // been stolen. Revoke every token belonging to its family.
         if (stored.RevokedAtUtc is not null)
         {
+            // Reject duplicate refreshes during a short grace period.
+            // Do not issue a new token or revoke the winning token.
+            var recentlyRotated =
+                stored.ReplacedByTokenHash is not null
+                && now >= stored.RevokedAtUtc.Value
+                && now - stored.RevokedAtUtc.Value
+                    <= TimeSpan.FromSeconds(2);
+
+            if (recentlyRotated)
+                return UnauthorizedProblem();
+
+            // Later reuse may indicate a stolen refresh token.
             await RevokeFamilyAsync(stored.FamilyId, now);
             ClearRefreshCookie();
             return UnauthorizedProblem();
@@ -199,7 +211,17 @@ public async Task<IActionResult> Login(
             now,
             now.Add(RefreshLifetime)));
 
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Another request updated this token first.
+            // Do not issue a replacement token for this request.
+            // Do not clear the cookie: another response may have replaced it.
+            return UnauthorizedProblem();
+        }
 
         SetRefreshCookie(newRawToken);
 

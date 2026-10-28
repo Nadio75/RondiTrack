@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json.Serialization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
@@ -448,9 +448,9 @@ builder.Services.AddScoped<
     IStokvelStore,
     EfStokvelStore>();
 
-builder.Services.AddSingleton<
+builder.Services.AddScoped<
     IContributionStore,
-    InMemoryContributionStore>();
+    RondiTrack.Infrastructure.Data.EfContributionStore>();
 
 builder.Services.AddSingleton<
     IIdempotencyStore,
@@ -662,3 +662,4 @@ app.Run();
 public partial class Program
 {
 }
+

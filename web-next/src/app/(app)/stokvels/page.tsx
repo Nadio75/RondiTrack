@@ -1,8 +1,9 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { getTypedHomeDashboard } from "@/lib/home";
 
 
-export default async function StokvelsPage() {
+async function StokvelsPageContent() {
   const home = await getTypedHomeDashboard();
 
   return (
@@ -44,3 +45,11 @@ export default async function StokvelsPage() {
   );
 }
 
+
+export default function StokvelsPage() {
+  return (
+    <Suspense fallback={<p>Loading your data...</p>}>
+      <StokvelsPageContent />
+    </Suspense>
+  );
+}

@@ -3265,3 +3265,196 @@ The following items remain relevant for future improvements:
 - Dependency audit findings should be reviewed separately before a production deployment.
 
 These items do not change the automated test results reported above.
+
+
+$path = '.\web-next\README.md'
+
+$section = @'
+
+---
+
+## Assignment 8.2 — Cache Components, Streaming and Contributions
+
+### 1. Cache Components and Partial Prefetching
+
+The frontend uses Next.js 16 Cache Components and Partial Prefetching.
+
+These features are enabled in `next.config.ts`:
+
+- `cacheComponents: true`
+- `partialPrefetching: true`
+
+This allows Next.js to prepare the static parts of pages while rendering dynamic content separately.
+
+Authenticated pages are wrapped in Suspense boundaries so that loading states can be displayed while user-specific information is fetched.
+
+### 2. Why authenticated data is not cached
+
+RondiTrack contains private information such as:
+
+- User identity and membership
+- Stokvel details
+- Contribution records
+- Financial information
+
+Authenticated backend requests use `cache: "no-store"`.
+
+This means the application requests fresh data rather than relying on a shared response cache.
+
+We do not use `use cache` for authenticated API responses because cached data must never be shared between different users.
+
+### 3. Parallel data fetching
+
+The stokvel detail page starts multiple backend requests without waiting for each request to finish before starting the next.
+
+These include:
+
+- The authenticated user's stokvel membership information
+- The selected stokvel's details
+- The stokvel's member list
+
+Independent results are awaited together using `Promise.all`.
+
+This reduces unnecessary waiting compared with fetching each resource one after another.
+
+The page also checks that the authenticated user belongs to the requested stokvel.
+
+Unauthorized or missing stokvel resources are not displayed.
+
+### 4. Streaming recent contributions
+
+The five most recent contributions are loaded separately from the main stokvel details.
+
+The recent contributions component uses a Suspense boundary with a loading fallback.
+
+This allows the main stokvel information to render without waiting for the contributions request.
+
+If no current contribution cycle exists, the page explains that there are no active-cycle contributions to display.
+
+### 5. Contribution form and Server Action
+
+The contribution form uses React `useActionState` and a Next.js Server Action.
+
+Amounts are validated with Zod before being submitted to the backend.
+
+The application converts rand amounts into integer cents to avoid floating-point payment calculations.
+
+The Server Action obtains the authenticated user's ID from the server-side session instead of trusting a user ID submitted by the browser.
+
+### 6. Idempotency and duplicate submissions
+
+Each new contribution attempt receives a server-generated idempotency key.
+
+If a submission fails, the frontend can reuse the same key when retrying the same contribution details.
+
+If the contribution amount changes, a different key is generated.
+
+The submit button is disabled while a request is pending.
+
+The backend also enforces duplicate-contribution rules and idempotency-key comparisons.
+
+Current limitations:
+
+- The frontend retry state does not survive every page refresh or browser restart.
+- Backend idempotency records are currently stored in memory.
+- The retry behavior still needs dedicated automated tests.
+
+### 7. Contribution cycle rules
+
+The frontend displays the contribution form only when:
+
+1. A current contribution cycle exists.
+2. The cycle status is `Open`.
+3. The current member has not already paid.
+
+The backend independently rejects new contributions to closed cycles.
+
+### 8. Error handling
+
+The contribution Server Action handles relevant backend errors, including:
+
+- HTTP 400: Invalid request
+- HTTP 403: Unauthorized operation
+- HTTP 404: Missing stokvel or cycle
+- HTTP 409: Contribution conflict
+- HTTP 422: Validation or business-rule error
+- HTTP 429: Too many requests
+
+Correlation IDs are displayed when available to help investigate failures.
+
+### 9. Refreshing the interface after contributions
+
+After a successful contribution, the Server Action calls `revalidatePath` for:
+
+- The selected stokvel detail page
+- The member dashboard
+- The treasurer dashboard
+
+This ensures that the next render can retrieve updated contribution information.
+
+### 10. Verification
+
+Frontend verification commands:
+
+```bash
+cd web-next
+npm run lint
+npm run build
+npm test
+## Refresh Token Concurrency and Security
+
+RondiTrack uses refresh-token rotation to keep users signed in securely.
+
+### How refresh-token rotation works
+
+When a user refreshes their session:
+
+1. The backend checks the existing refresh token.
+2. The existing token is revoked.
+3. A new refresh token is created and saved.
+4. The new token is sent to the browser in an HttpOnly cookie.
+
+A refresh token should only be used once.
+
+### Concurrent refresh protection
+
+Two requests can sometimes try to refresh the same session simultaneously.
+
+RondiTrack uses PostgreSQL's built-in `xmin` concurrency token with
+Entity Framework Core's `IsRowVersion()` configuration.
+
+This allows the database to detect when two requests attempt to
+update the same refresh-token record.
+
+Only one request can successfully rotate the original token.
+The other request receives HTTP 401 Unauthorized.
+
+The losing request does not clear the refresh cookie because
+another response may already have replaced it.
+
+### Two-second duplicate-request grace period
+
+If an already-rotated token is reused within two seconds,
+the backend rejects the request with HTTP 401 but does not
+revoke the replacement token.
+
+This protects legitimate sessions from accidental duplicate
+requests caused by concurrent browser activity.
+
+If the old token is reused after the grace period,
+the backend treats it as possible token theft and revokes
+the refresh-token family.
+
+Security trade-off: A stolen token replayed during the
+two-second grace period is rejected but does not immediately
+trigger family-wide revocation. The grace period therefore
+balances duplicate-request tolerance against replay detection.
+
+### Automated verification
+
+Authentication security tests verify that:
+
+- Concurrent refresh requests cannot both rotate the same token.
+- Immediate duplicate requests cannot invalidate the winning token.
+- Reuse after the grace period revokes the replacement token.
+- The replacement token remains usable after a rejected duplicate request.
