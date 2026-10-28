@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { logoutAction } from "@/actions/auth";
 
-export default async function AppLayout({
+async function AuthenticatedShell({
   children,
 }: {
   children: React.ReactNode;
@@ -54,5 +55,23 @@ export default async function AppLayout({
         {children}
       </main>
     </div>
+  );
+}
+
+export default function AppLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen p-6">
+          <p>Loading your RondiTrack workspace...</p>
+        </div>
+      }
+    >
+      <AuthenticatedShell>{children}</AuthenticatedShell>
+    </Suspense>
   );
 }

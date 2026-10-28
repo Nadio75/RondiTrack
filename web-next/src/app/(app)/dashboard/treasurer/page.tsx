@@ -1,9 +1,10 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { apiRequest } from "@/lib/api";
 import { stokvelsWhereTreasurer } from "@/lib/treasurer";
 import type { HomeDashboard } from "@/lib/types";
 
-export default async function TreasurerDashboardPage() {
+async function TreasurerDashboardPageContent() {
   const home = await apiRequest<HomeDashboard>("/api/v1/me/home");
   const treasurerStokvels = stokvelsWhereTreasurer(home.stokvels);
 
@@ -50,5 +51,13 @@ export default async function TreasurerDashboardPage() {
         </div>
       )}
     </section>
+  );
+}
+
+export default function TreasurerDashboardPage() {
+  return (
+    <Suspense fallback={<p>Loading your data...</p>}>
+      <TreasurerDashboardPageContent />
+    </Suspense>
   );
 }

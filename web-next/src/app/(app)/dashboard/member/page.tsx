@@ -1,8 +1,9 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { apiRequest } from "@/lib/api";
 import type { HomeDashboard } from "@/lib/types";
 
-export default async function MemberDashboardPage() {
+async function MemberDashboardPageContent() {
   const home = await apiRequest<HomeDashboard>("/api/v1/me/home");
 
   return (
@@ -52,5 +53,13 @@ export default async function MemberDashboardPage() {
         </div>
       )}
     </section>
+  );
+}
+
+export default function MemberDashboardPage() {
+  return (
+    <Suspense fallback={<p>Loading your data...</p>}>
+      <MemberDashboardPageContent />
+    </Suspense>
   );
 }

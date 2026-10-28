@@ -742,14 +742,14 @@ string? idempotencyKey,
         if (afterCreatedAt.HasValue && afterId.HasValue)
         {
             query = query.Where(x =>
-                x.CreatedAt > afterCreatedAt.Value ||
-                (x.CreatedAt == afterCreatedAt.Value && x.Id.CompareTo(afterId.Value) > 0));
+                x.CreatedAt < afterCreatedAt.Value ||
+                (x.CreatedAt == afterCreatedAt.Value && x.Id.CompareTo(afterId.Value) < 0));
         }
 
         // deterministic order + unique tie-breaker
         query = query
-            .OrderBy(x => x.CreatedAt)
-            .ThenBy(x => x.Id);
+            .OrderByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id);
 
         // fetch one extra row to know whether a next page exists
         var rows = await query
