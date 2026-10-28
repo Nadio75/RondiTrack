@@ -3401,3 +3401,60 @@ cd web-next
 npm run lint
 npm run build
 npm test
+## Refresh Token Concurrency and Security
+
+RondiTrack uses refresh-token rotation to keep users signed in securely.
+
+### How refresh-token rotation works
+
+When a user refreshes their session:
+
+1. The backend checks the existing refresh token.
+2. The existing token is revoked.
+3. A new refresh token is created and saved.
+4. The new token is sent to the browser in an HttpOnly cookie.
+
+A refresh token should only be used once.
+
+### Concurrent refresh protection
+
+Two requests can sometimes try to refresh the same session simultaneously.
+
+RondiTrack uses PostgreSQL's built-in `xmin` concurrency token with
+Entity Framework Core's `IsRowVersion()` configuration.
+
+This allows the database to detect when two requests attempt to
+update the same refresh-token record.
+
+Only one request can successfully rotate the original token.
+The other request receives HTTP 401 Unauthorized.
+
+The losing request does not clear the refresh cookie because
+another response may already have replaced it.
+
+### Two-second duplicate-request grace period
+
+If an already-rotated token is reused within two seconds,
+the backend rejects the request with HTTP 401 but does not
+revoke the replacement token.
+
+This protects legitimate sessions from accidental duplicate
+requests caused by concurrent browser activity.
+
+If the old token is reused after the grace period,
+the backend treats it as possible token theft and revokes
+the refresh-token family.
+
+Security trade-off: A stolen token replayed during the
+two-second grace period is rejected but does not immediately
+trigger family-wide revocation. The grace period therefore
+balances duplicate-request tolerance against replay detection.
+
+### Automated verification
+
+Authentication security tests verify that:
+
+- Concurrent refresh requests cannot both rotate the same token.
+- Immediate duplicate requests cannot invalidate the winning token.
+- Reuse after the grace period revokes the replacement token.
+- The replacement token remains usable after a rejected duplicate request.

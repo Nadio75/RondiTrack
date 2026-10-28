@@ -1,7 +1,8 @@
-namespace RondiTrack.Domain;
+﻿namespace RondiTrack.Domain;
 
 public class RefreshToken
 {
+    public uint xmin { get; private set; }
     public Guid Id { get; private set; } = Guid.NewGuid();
     public Guid UserId { get; private set; }
     public Guid FamilyId { get; private set; }

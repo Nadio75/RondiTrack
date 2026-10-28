@@ -262,8 +262,11 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
         var firstRefresh = await client.SendAsync(firstRequest);
 
         Assert.Equal(HttpStatusCode.OK, firstRefresh.StatusCode);
-
         var newCookie = GetRefreshCookie(firstRefresh);
+
+        // Wait beyond the two-second duplicate-request grace period.
+        // Reusing the old token must now revoke the entire token family.
+        await Task.Delay(TimeSpan.FromSeconds(3));
 
         using var reuseRequest = CookieRequest(
             HttpMethod.Post, "/api/v1/auth/refresh", oldCookie);
@@ -280,6 +283,51 @@ public async Task Wrong_password_and_unknown_email_return_same_problem()
         Assert.Equal(HttpStatusCode.Unauthorized, latest.StatusCode);
     }
 
+    [Fact]
+    public async Task Immediate_duplicate_refresh_does_not_revoke_new_token()
+    {
+        using var client = CreateClient();
+        var email = NewEmail();
+
+        await RegisterAsync(client, email);
+
+        using var login = await LoginAsync(client, email);
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+
+        var oldCookie = GetRefreshCookie(login);
+
+        using var firstRequest = CookieRequest(
+            HttpMethod.Post, "/api/v1/auth/refresh", oldCookie);
+
+        using var firstRefresh = await client.SendAsync(firstRequest);
+        Assert.Equal(HttpStatusCode.OK, firstRefresh.StatusCode);
+
+        var newCookie = GetRefreshCookie(firstRefresh);
+
+        // Reuse the old token immediately, inside the grace period.
+        using var duplicateRequest = CookieRequest(
+            HttpMethod.Post, "/api/v1/auth/refresh", oldCookie);
+
+        using var duplicate = await client.SendAsync(duplicateRequest);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, duplicate.StatusCode);
+
+        // The duplicate response must not clear the winning cookie.
+        Assert.False(
+            duplicate.Headers.TryGetValues("Set-Cookie", out var cookies)
+            && cookies.Any(value =>
+                value.StartsWith(
+                    "ronditrack_refresh=",
+                    StringComparison.Ordinal)));
+
+        // The replacement token must still work.
+        using var followUpRequest = CookieRequest(
+            HttpMethod.Post, "/api/v1/auth/refresh", newCookie);
+
+        using var followUp = await client.SendAsync(followUpRequest);
+
+        Assert.Equal(HttpStatusCode.OK, followUp.StatusCode);
+    }
     [Fact]
     public async Task Logout_revokes_refresh_token()
     {
@@ -720,4 +768,64 @@ public async Task Treasurer_can_record_another_members_contribution()
     Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 }
 
+
+    [Fact]
+    public async Task Concurrent_refresh_requests_cannot_both_rotate_same_token()
+    {
+        using var client = CreateClient();
+        var email = NewEmail();
+
+        await RegisterAsync(client, email);
+
+        using var login = await LoginAsync(client, email);
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+
+        var cookie = GetRefreshCookie(login);
+
+        using var firstRequest = CookieRequest(
+            HttpMethod.Post, "/api/v1/auth/refresh", cookie);
+
+        using var secondRequest = CookieRequest(
+            HttpMethod.Post, "/api/v1/auth/refresh", cookie);
+
+        var firstTask = client.SendAsync(firstRequest);
+        var secondTask = client.SendAsync(secondRequest);
+
+        using var first = await firstTask;
+        using var second = await secondTask;
+
+        var successful = new[] { first, second }
+            .Count(response => response.StatusCode == HttpStatusCode.OK);
+
+        Assert.Equal(1, successful);
+
+        var winner = first.StatusCode == HttpStatusCode.OK
+            ? first
+            : second;
+
+        var loser = first.StatusCode == HttpStatusCode.OK
+            ? second
+            : first;
+
+        Assert.Equal(HttpStatusCode.Unauthorized, loser.StatusCode);
+
+        Assert.False(
+            loser.Headers.TryGetValues("Set-Cookie", out var losingCookies)
+            && losingCookies.Any(value =>
+                value.StartsWith(
+                    "ronditrack_refresh=",
+                    StringComparison.Ordinal)),
+            "The losing request must not overwrite the winning cookie.");
+
+        var winningCookie = GetRefreshCookie(winner);
+
+        using var followUpRequest = CookieRequest(
+            HttpMethod.Post,
+            "/api/v1/auth/refresh",
+            winningCookie);
+
+        using var followUp = await client.SendAsync(followUpRequest);
+
+        Assert.Equal(HttpStatusCode.OK, followUp.StatusCode);
+    }
 }

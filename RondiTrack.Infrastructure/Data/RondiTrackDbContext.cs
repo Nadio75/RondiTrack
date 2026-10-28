@@ -264,6 +264,10 @@ public class RondiTrackDbContext : DbContext
         {
             b.HasKey(t => t.Id);
 
+            // Detect simultaneous refresh-token updates.
+            b.Property(t => t.xmin)
+                .IsRowVersion();
+
             b.Property(t => t.TokenHash)
                 .IsRequired()
                 .HasMaxLength(64);
