@@ -1,3 +1,6 @@
+import { PinnedStokvelProvider } from "@/lib/pinned-stokvels-provider";
+import { SecureLogoutButton } from "@/lib/secure-logout-button";
+import { PinnedStokvelsSidebar } from "@/lib/pinned-stokvels-sidebar";
 import Link from "next/link";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
@@ -16,7 +19,8 @@ async function AuthenticatedShell({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 md:flex">
+    <PinnedStokvelProvider userId={session.user.id}>
+      <div className="min-h-screen bg-gray-50 text-gray-900 md:flex">
       <aside className="border-b bg-white p-6 md:min-h-screen md:w-64 md:border-b-0 md:border-r">
         <h1 className="mb-6 text-2xl font-bold text-blue-800">
           RondiTrack
@@ -26,6 +30,9 @@ async function AuthenticatedShell({
           <Link href="/stokvels" className="block hover:underline">
             My Stokvels
           </Link>
+          <Link href="/activity" className="block hover:underline">
+            My Activity
+          </Link>
           <Link href="/dashboard/member" className="block hover:underline">
             Member Dashboard
           </Link>
@@ -33,6 +40,7 @@ async function AuthenticatedShell({
             Treasurer Dashboard
           </Link>
         </nav>
+          <PinnedStokvelsSidebar />
 
         <div className="mt-10 border-t pt-5">
           <p className="font-semibold">{session.user.name}</p>
@@ -41,12 +49,7 @@ async function AuthenticatedShell({
           </p>
 
           <form action={logoutAction} className="mt-4">
-            <button
-              type="submit"
-              className="rounded-md bg-gray-900 px-4 py-2 text-white"
-            >
-              Sign out
-            </button>
+            <SecureLogoutButton />
           </form>
         </div>
       </aside>
@@ -55,6 +58,7 @@ async function AuthenticatedShell({
         {children}
       </main>
     </div>
+    </PinnedStokvelProvider>
   );
 }
 
