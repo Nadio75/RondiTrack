@@ -3401,6 +3401,8 @@ cd web-next
 npm run lint
 npm run build
 npm test
+```
+
 ## Refresh Token Concurrency and Security
 
 RondiTrack uses refresh-token rotation to keep users signed in securely.
@@ -3458,3 +3460,153 @@ Authentication security tests verify that:
 - Immediate duplicate requests cannot invalidate the winning token.
 - Reuse after the grace period revokes the replacement token.
 - The replacement token remains usable after a rejected duplicate request.
+
+---
+
+## Assignment 8.3 - Contribution History, Activity Feed and Pinned Stokvels
+
+### Overview
+
+Assignment 8.3 extends RondiTrack with contribution history, a member-scoped activity feed, and pinned stokvel navigation.
+
+The goal is to help members find historical information, monitor relevant activity, and quickly return to frequently used stokvels.
+
+### 1. Contribution History API
+
+The backend provides:
+
+`GET /api/v1/stokvels/{id}/contributions`
+
+This endpoint returns contribution history with filtering and pagination support.
+
+The implementation includes:
+
+- A dedicated contribution history controller.
+- Response DTOs for contribution history records.
+- Filtering support.
+- Keyset pagination using page tokens.
+- Token validation and protection.
+- Membership and authorization checks.
+- South African date-handling rules.
+
+Keyset pagination uses the last record from a previous page to determine where the next page should begin.
+
+This avoids relying on large database offsets and helps maintain consistent ordering.
+
+### 2. Secure Page Tokens
+
+The backend includes page-token helpers and a token protector.
+
+Page tokens represent the position and relevant request context for retrieving another page.
+
+The backend validates tokens rather than trusting values supplied by the browser.
+
+Invalid or incompatible tokens are rejected.
+
+### 3. Member Activity Feed
+
+The backend provides:
+
+`GET /api/v1/activity`
+
+The activity feed is scoped to the authenticated member.
+
+Its purpose is to present relevant stokvel activity without exposing information belonging to unrelated members.
+
+The implementation includes:
+
+- An activity controller.
+- An activity feed DTO.
+- Activity pagination support.
+- Authorization and membership checks.
+- Automated API tests.
+
+### 4. Next.js Contribution History
+
+The frontend includes a contribution history page for individual stokvels.
+
+It uses:
+
+- Server-side rendering for initial data.
+- A Backend-for-Frontend (BFF) layer for authenticated backend requests.
+- URL-based filtering with nuqs.
+- TanStack React Query for client-side data fetching.
+- Infinite queries for loading additional pages.
+- South African date utilities.
+
+Keeping filters in the URL makes the selected view easier to revisit or share.
+
+### 5. Next.js Activity Feed
+
+The frontend includes an activity page.
+
+Initial activity data is loaded on the server.
+
+Additional records can be retrieved using React Query infinite pagination.
+
+The BFF layer handles communication between the browser-facing application and the backend API.
+
+### 6. Pinned Stokvels with Zustand
+
+Members can pin or unpin stokvels from the My Stokvels page.
+
+Pinned stokvels appear in the authenticated application's sidebar for quick navigation.
+
+The implementation uses a Zustand vanilla store and React context provider.
+
+Only the pinned stokvel ID and name are persisted in localStorage.
+
+The store uses manual hydration so persisted browser state is restored after the client initializes.
+
+### 7. Account-Switch and Logout Protection
+
+Pinned stokvel preferences are associated with the current user's ID.
+
+When a different user signs in, preferences belonging to the previous user are not restored.
+
+On logout, the application clears pinned stokvel state and its associated localStorage keys.
+
+This prevents pinned navigation preferences from carrying over between accounts using the same browser.
+
+### 8. Automated Tests
+
+Backend tests cover contribution history, activity feed behavior, and page-token handling.
+
+The complete backend test suite was run using:
+
+`dotnet test --no-restore`
+
+Results:
+
+- Total tests: 217
+- Passed: 217
+- Failed: 0
+- Skipped: 0
+
+The test suite also exercised PostgreSQL integration tests using Docker test containers.
+
+### 9. Frontend Verification
+
+The frontend was verified using:
+
+`npm run lint`
+
+`npm run build`
+
+Both commands completed successfully.
+
+Additional browser checks verified:
+
+- Pinning and unpinning stokvels.
+- Pinned preferences surviving a page refresh.
+- Preventing another user's pins from being restored.
+- Clearing pinned preferences on logout.
+- Contribution history and activity page rendering.
+
+### 10. Important Implementation Principle
+
+The backend remains responsible for authorization and data access.
+
+Frontend controls improve usability but do not replace backend security checks.
+
+The application combines secure backend endpoints with server-rendered frontend pages and client-side pagination.

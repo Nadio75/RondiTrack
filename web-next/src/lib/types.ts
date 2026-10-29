@@ -50,3 +50,24 @@ export type PagedResponse<T> = {
   items: T[];
   nextPageToken: string | null;
 };
+
+export type StokvelContributionHistoryItem = {
+  id: string;
+  stokvelId: string;
+  contributionCycleId: string;
+  memberId: string;
+  memberName: string;
+  amount: number;
+  createdAt: string;
+};
+
+export type ActivityFeedItem = {
+  id: string;
+  stokvelId: string;
+  stokvelName: string;
+  activityType: string;
+  occurredAt: string;
+  memberId: string | null;
+  memberName: string | null;
+  amount: number | null;
+};

@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json.Serialization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
@@ -36,6 +36,10 @@ var builder = WebApplication.CreateBuilder(args);
 // 1. Controllers and OpenAPI
 // --------------------------------------------------
 
+// Data Protection authenticates and encrypts pagination bookmarks.
+// Production deployments must persist and share their key ring securely.
+builder.Services.AddDataProtection();
+builder.Services.AddSingleton<RondiTrack.Helpers.PageTokenProtector>();
 builder.Services
     .AddControllers(options =>
     {
@@ -662,4 +666,3 @@ app.Run();
 public partial class Program
 {
 }
-

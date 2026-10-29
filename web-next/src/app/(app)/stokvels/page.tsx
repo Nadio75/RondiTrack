@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { getTypedHomeDashboard } from "@/lib/home";
+import { PinStokvelButton } from "@/lib/pin-stokvel-button";
 
 
 async function StokvelsPageContent() {
@@ -19,9 +20,16 @@ async function StokvelsPageContent() {
               key={stokvel.stokvelId}
               className="rounded-xl border bg-white p-6 shadow-sm"
             >
-              <h2 className="text-xl font-semibold">
-                {stokvel.name}
-              </h2>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <h2 className="text-xl font-semibold">
+                  {stokvel.name}
+                </h2>
+
+                <PinStokvelButton
+                  id={stokvel.stokvelId}
+                  name={stokvel.name}
+                />
+              </div>
 
               <p className="mt-2 text-gray-600">
                 Your role: {stokvel.role}
