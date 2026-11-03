@@ -1,5 +1,7 @@
 "use server";
 
+import { safeNextPath } from "@/lib/safe-next-path";
+
 import { redirect } from "next/navigation";
 import {
   apiBaseUrl,
@@ -100,7 +102,7 @@ export async function loginAction(
     };
   }
 
-  redirect("/stokvels");
+  redirect(safeNextPath(formData.get("next")));
 }
 
 export async function logoutAction(): Promise<void> {

@@ -1,4 +1,4 @@
-
+﻿
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -16,17 +16,20 @@ public class RecordContributionService
     private readonly IContributionStore _contributionStore;
     private readonly IContributionCycleStore _cycleStore;
     private readonly IIdempotencyStore _idempotencyStore;
+    private readonly ContributionTransactionService? _transactionService;
 
     public RecordContributionService(
         IStokvelStore stokvelStore,
         IContributionStore contributionStore,
         IContributionCycleStore cycleStore,
-        IIdempotencyStore idempotencyStore)
+        IIdempotencyStore idempotencyStore,
+        ContributionTransactionService? transactionService = null)
     {
         _stokvelStore = stokvelStore;
         _contributionStore = contributionStore;
         _cycleStore = cycleStore;
         _idempotencyStore = idempotencyStore;
+        _transactionService = transactionService;
     }
 
     public async Task<ContributionResponse> ExecuteAsync(
@@ -117,7 +120,18 @@ if (cycle.IsClosed)
             throw new BusinessRuleViolationException(ex.Message);
         }
 
-        await _contributionStore.AddAsync(contribution);
+        if (_transactionService is not null)
+        {
+            contribution = await _transactionService.RecordAsync(
+                stokvelId,
+                request.UserId,
+                request.Amount,
+                request.ContributionCycleId);
+        }
+        else
+        {
+            await _contributionStore.AddAsync(contribution);
+        }
 
         var response = ContributionMapper.ToResponse(
             contribution);

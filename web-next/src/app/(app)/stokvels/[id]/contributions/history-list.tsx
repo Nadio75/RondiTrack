@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { ProofOfPayment } from "../proof-of-payment";
 import {
   fetchContributionHistoryPage,
   type ClientContributionFilters,
@@ -14,6 +15,10 @@ type HistoryListProps = {
   stokvelId: string;
   filters: ClientContributionFilters;
   initialPage: PagedResponse<StokvelContributionHistoryItem>;
+  currentUserId: string;
+  currentUserRole: string;
+  currentCycleId: string | null;
+  currentCycleClosed: boolean;
 };
 
 const southAfricanDateFormatter = new Intl.DateTimeFormat("en-ZA", {
@@ -26,6 +31,10 @@ export function HistoryList({
   stokvelId,
   filters,
   initialPage,
+  currentUserId,
+  currentUserRole,
+  currentCycleId,
+  currentCycleClosed,
 }: HistoryListProps) {
   const query = useInfiniteQuery({
     queryKey: [
@@ -95,6 +104,20 @@ export function HistoryList({
                 new Date(contribution.createdAt),
               )}
             </p>
+
+            {(contribution.memberId.toLowerCase() === currentUserId.toLowerCase() ||
+              currentUserRole.toLowerCase() === "treasurer") && (
+              <div className="mt-4">
+                <ProofOfPayment
+                  stokvelId={stokvelId}
+                  contributionId={contribution.id}
+                  isClosed={
+                    currentCycleId !== contribution.contributionCycleId ||
+                    currentCycleClosed
+                  }
+                />
+              </div>
+            )}
           </li>
         ))}
       </ul>

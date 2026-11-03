@@ -265,6 +265,7 @@ public class StokvelsController : ControllerBase
             stokvel = new Stokvel(
                 request.Name,
                 request.ContributionAmount);
+            stokvel.UpdateRules(request.Rules ?? "");
         }
         catch (ArgumentException ex)
         {
@@ -329,6 +330,11 @@ public class StokvelsController : ControllerBase
         {
             stokvel.Rename(request.Name);
             stokvel.UpdateContributionAmount(request.ContributionAmount);
+
+            if (request.Rules is not null)
+            {
+                stokvel.UpdateRules(request.Rules);
+            }
         }
         catch (ArgumentException ex)
         {

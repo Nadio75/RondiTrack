@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useSearchParams } from "next/navigation";
 import { loginAction, type LoginState } from "@/actions/auth";
 
 const initialState: LoginState = {
@@ -9,6 +10,7 @@ const initialState: LoginState = {
 };
 
 export default function LoginForm() {
+  const searchParams = useSearchParams();
   const [state, formAction, pending] = useActionState(
     loginAction,
     initialState,
@@ -20,6 +22,7 @@ export default function LoginForm() {
       className="mx-auto mt-16 max-w-md space-y-5 rounded-xl border p-8"
     >
       <h1 className="text-2xl font-bold">Sign in to RondiTrack</h1>
+      <input type="hidden" name="next" value={searchParams.get("next") ?? ""} />
 
       <div className="space-y-2">
         <label htmlFor="email" className="block">

@@ -3,7 +3,8 @@ namespace RondiTrack.Models;
 
 public record CreateStokvelRequest(
     string Name,
-    decimal ContributionAmount
+    decimal ContributionAmount,
+    string? Rules = null
 );
 
 public record AddMemberRequest(Guid UserId);

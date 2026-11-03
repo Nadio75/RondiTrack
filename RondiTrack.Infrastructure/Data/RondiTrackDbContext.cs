@@ -1,4 +1,4 @@
-
+﻿
 namespace RondiTrack.Infrastructure;
 
 using Microsoft.EntityFrameworkCore;
@@ -15,16 +15,120 @@ public class RondiTrackDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Stokvel> Stokvels => Set<Stokvel>();
     public DbSet<StokvelMember> StokvelMembers => Set<StokvelMember>();
+    public DbSet<StokvelInvitation> StokvelInvitations => Set<StokvelInvitation>();
     public DbSet<ContributionCycle> ContributionCycles => Set<ContributionCycle>();
     public DbSet<Contribution> Contributions => Set<Contribution>();
+    public DbSet<ContributionProof> ContributionProofs => Set<ContributionProof>();
     public DbSet<Payout> Payouts => Set<Payout>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<ContributionArrear> ContributionArrears => Set<ContributionArrear>();
+    public DbSet<CycleClosingRequest> CycleClosingRequests => Set<CycleClosingRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<CycleClosingRequest>(b =>
+        {
+            b.HasKey(r => r.Id);
+
+            b.Property(r => r.StokvelId).IsRequired();
+            b.Property(r => r.CycleId).IsRequired();
+            b.Property(r => r.RequestedByUserId).IsRequired();
+
+            b.Property(r => r.IdempotencyKey)
+                .IsRequired()
+                .HasMaxLength(128);
+
+            b.Property(r => r.SnapshotToken)
+                .IsRequired()
+                .HasMaxLength(64);
+
+            b.Property(r => r.CompletedAtUtc).IsRequired();
+            b.Property(r => r.TotalArrearsCents).IsRequired();
+
+            b.HasIndex(r => new
+            {
+                r.StokvelId,
+                r.RequestedByUserId,
+                r.IdempotencyKey
+            }).IsUnique();
+
+            b.HasOne<Stokvel>()
+                .WithMany()
+                .HasForeignKey(r => r.StokvelId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasOne<ContributionCycle>()
+                .WithMany()
+                .HasForeignKey(r => r.CycleId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(r => r.RequestedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
         // Membership is represented by the StokvelMember table.
         // Stokvel.MemberIds is only a read-only view and is not mapped.
+modelBuilder.Entity<ContributionProof>(b =>
+{
+    b.HasKey(p => p.Id);
+
+    b.HasIndex(p => p.ContributionId)
+        .IsUnique();
+
+    b.Property(p => p.FileName)
+        .IsRequired()
+        .HasMaxLength(255);
+
+    b.Property(p => p.ContentType)
+        .IsRequired()
+        .HasMaxLength(100);
+
+    b.Property(p => p.FileData)
+        .IsRequired()
+        .HasColumnType("bytea");
+
+    b.Property(p => p.UploadedAtUtc)
+        .IsRequired();
+
+    b.HasOne(p => p.Contribution)
+        .WithMany()
+        .HasForeignKey(p => p.ContributionId)
+        .OnDelete(DeleteBehavior.Cascade);
+
+    b.HasOne<User>()
+        .WithMany()
+        .HasForeignKey(p => p.UploadedByUserId)
+        .OnDelete(DeleteBehavior.Restrict);
+});
+
+        modelBuilder.Entity<StokvelInvitation>(b =>
+        {
+
+            b.HasKey(i => i.Id);
+
+            b.Property(i => i.CodeHash)
+                .IsRequired()
+                .HasMaxLength(64);
+
+            b.HasIndex(i => i.CodeHash)
+                .IsUnique();
+
+            b.HasIndex(i => i.StokvelId);
+
+            b.Property(i => i.CreatedAtUtc).IsRequired();
+            b.Property(i => i.ExpiresAtUtc).IsRequired();
+
+            b.HasOne(i => i.Stokvel)
+                .WithMany()
+                .HasForeignKey(i => i.StokvelId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(i => i.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
 
         // -------------------------------------------------------
         // StokvelMember
@@ -74,7 +178,12 @@ public class RondiTrackDbContext : DbContext
                 .HasMaxLength(100);
 
             // Decimal is used for financial precision.
-            b.Property(s => s.ContributionAmount)
+            b.Property(s => s.Rules)
+                  .IsRequired()
+                  .HasMaxLength(4000)
+                  .HasDefaultValue("");
+
+              b.Property(s => s.ContributionAmount)
                 .HasPrecision(18, 2);
 
             // NEW: The day of the month when this stokvel
