@@ -228,7 +228,3 @@ export default function StokvelDetailPage({
     </Suspense>
   );
 }
-
-
-
-

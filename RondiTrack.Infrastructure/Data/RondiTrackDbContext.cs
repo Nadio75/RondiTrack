@@ -455,4 +455,3 @@ modelBuilder.Entity<ContributionProof>(b =>
         });
     }
 }
-

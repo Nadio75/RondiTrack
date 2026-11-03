@@ -148,6 +148,3 @@ public sealed class CycleClosingController : ControllerBase
         return Ok(result);
     }
 }
-
-
-

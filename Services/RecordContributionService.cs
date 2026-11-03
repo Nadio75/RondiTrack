@@ -160,4 +160,3 @@ if (cycle.IsClosed)
         return Convert.ToHexString(bytes);
     }
 }
-

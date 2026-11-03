@@ -319,4 +319,3 @@ export function CloseCycle({ stokvelId, cycleId }: Props) {
     </div>
   );
 }
-

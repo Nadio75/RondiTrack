@@ -184,5 +184,3 @@ public sealed class ConfirmedCycleClosingService
         });
     }
 }
-
-

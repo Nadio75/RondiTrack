@@ -176,4 +176,3 @@ return new CycleClosingPreview(
     snapshotToken);
     }
 }
-
