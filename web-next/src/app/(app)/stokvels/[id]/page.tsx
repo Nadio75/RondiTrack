@@ -1,5 +1,7 @@
-﻿import { Suspense } from "react";
+﻿import { CloseCycle } from "./close-cycle";
+import { Suspense } from "react";
 import { ContributionForm } from "./contribution-form";
+import { GenerateInvitation } from "./generate-invitation";
 import { notFound } from "next/navigation";
 import { apiRequest, ApiError } from "@/lib/api";
 import { getServerTime } from "@/lib/server-timing";
@@ -144,6 +146,18 @@ async function StokvelDetailContent({
         <p>Members: {stokvel.memberCount}</p>
       </div>
 
+      {(membership.role === "Chairperson" ||
+        membership.role === "Treasurer") && (
+        <GenerateInvitation stokvelId={id} />
+      )}
+
+      {membership.role === "Treasurer" &&
+        membership.currentCycle && (
+          <CloseCycle
+            stokvelId={id}
+            cycleId={membership.currentCycle.cycleId}
+          />
+        )}
       <div className="rounded-xl border bg-white p-6">
         <h2 className="mb-3 text-xl font-semibold">Current cycle</h2>
 
@@ -214,5 +228,7 @@ export default function StokvelDetailPage({
     </Suspense>
   );
 }
+
+
 
 

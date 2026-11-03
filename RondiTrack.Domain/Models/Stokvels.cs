@@ -4,9 +4,24 @@ public class Stokvel
 {
     public Guid Id { get; }
     public string Name { get; private set; }
+
+    // Rules that someone must read before joining the stokvel.
+    public string Rules { get; private set; } = string.Empty;
+
+    public void UpdateRules(string rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+
+        if (rules.Length > 4000)
+            throw new ArgumentException(
+                "Stokvel rules cannot exceed 4000 characters.",
+                nameof(rules));
+
+        Rules = rules;
+    }
     public ICollection<StokvelMember> Memberships { get; private set; } = new List<StokvelMember>();
     public ICollection<ContributionCycle> ContributionCycles { get; private set; } = new List<ContributionCycle>();
-        // Optimistic concurrency token – maps to PostgreSQL xmin (no real column)
+        // Optimistic concurrency token â€“ maps to PostgreSQL xmin (no real column)
     public uint xmin { get; set; }
     private Stokvel() { } // EF Core materializes instances via this, writing straight to the backing fields
 
@@ -25,7 +40,7 @@ public int ClosingDayOfMonth { get; private set; } = 25;
 
     // This is what outside code actually sees when it reads Stokvel.MemberIds.
     // IReadOnlyCollection<Guid> means: you can look at what's in here,
-    // loop over it, count it — but you cannot call .Add() or .Remove() on it.
+    // loop over it, count it â€” but you cannot call .Add() or .Remove() on it.
     // It's a "read-only window" onto the private list above.
     public IReadOnlyCollection<Guid> MemberIds => _memberIds.AsReadOnly();
 
@@ -36,7 +51,7 @@ public int ClosingDayOfMonth { get; private set; } = 25;
             throw new ArgumentException("A stokvel must have a name.", nameof(name));
         }
 
-        // A contribution amount of zero or less makes no real-world sense —
+        // A contribution amount of zero or less makes no real-world sense â€”
         // you can't have a savings group where nobody contributes anything,
         // or where the number is negative. We stop that at the door.
         if (contributionAmount <= 0)
@@ -51,7 +66,7 @@ public int ClosingDayOfMonth { get; private set; } = 25;
         ContributionAmount = contributionAmount;
 
         // Note: we do NOT add any members here. A brand-new stokvel starts
-        // with zero members, and that's fine — it becomes valid membership-wise
+        // with zero members, and that's fine â€” it becomes valid membership-wise
         // as people join, which is handled by AddMember below.
     }
 
@@ -68,9 +83,9 @@ public int ClosingDayOfMonth { get; private set; } = 25;
     //This is the part where memebers are being added to the stokvel. We check for duplicates and throw an exception if the user is already a member. 
     public void AddMember(Guid userId)
     {
-        // Contains() checks the private list — if this userId is already
+        // Contains() checks the private list â€” if this userId is already
         // in there, we refuse the operation instead of silently allowing
-        // a duplicate (which would be meaningless — you can't be "double"
+        // a duplicate (which would be meaningless â€” you can't be "double"
         // a member of the same group).
         if (_memberIds.Contains(userId))
         {
@@ -96,7 +111,7 @@ public int ClosingDayOfMonth { get; private set; } = 25;
 
         // Used only by the EF Core repository to rebuild MemberIds after loading
     // a Stokvel from the database. Nothing in Controllers, Services, or the
-    // public contract of Stokvel changes because of this — it's internal.
+    // public contract of Stokvel changes because of this â€” it's internal.
 public void LoadMembers(IEnumerable<Guid> memberIds)    {
         _memberIds.Clear();
         _memberIds.AddRange(memberIds);

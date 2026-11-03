@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "6mb",
+    },
+  },
   reactCompiler: true,
   cacheComponents: true, // Enables partial prerendering and streaming.
   partialPrefetching: true, // Prefetches the static shell without waiting for dynamic data.
@@ -17,3 +22,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+

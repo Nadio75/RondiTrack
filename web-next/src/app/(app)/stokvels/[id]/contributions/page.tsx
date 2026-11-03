@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+﻿import { Suspense } from "react";
 import { HistoryFilters } from "./history-filters";
 import { HistoryList } from "./history-list";
 import Link from "next/link";
@@ -11,6 +11,7 @@ import {
   isAllowedHistoryMember,
 } from "@/lib/contribution-history-members";
 import { findStokvelMembership } from "@/lib/stokvel-membership";
+import { getSession } from "@/lib/session";
 import type { HomeDashboard } from "@/lib/types";
 
 type HistoryPageProps = {
@@ -41,7 +42,10 @@ async function HistoryContent({
     notFound();
   }
 
-  const home = await apiRequest<HomeDashboard>("/api/v1/me/home");
+  const [home, session] = await Promise.all([
+    apiRequest<HomeDashboard>("/api/v1/me/home"),
+    getSession(),
+  ]);
   const membership = findStokvelMembership(home, id);
 
   if (!membership) {
@@ -108,6 +112,10 @@ async function HistoryContent({
         stokvelId={id}
         filters={filters}
         initialPage={history}
+        currentUserId={session?.user.id ?? ""}
+        currentUserRole={membership.role}
+        currentCycleId={membership.currentCycle?.cycleId ?? null}
+        currentCycleClosed={membership.currentCycle?.status !== "Open"}
       />
     </main>
   );
@@ -128,3 +136,4 @@ export default function ContributionHistoryPage(
     </Suspense>
   );
 }
+

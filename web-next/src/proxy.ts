@@ -21,12 +21,12 @@ function loginRedirect(request: NextRequest, expired = false) {
 
   if (expired) {
     url.searchParams.set("expired", "1");
-  } else {
-    url.searchParams.set(
-      "next",
-      request.nextUrl.pathname + request.nextUrl.search,
-    );
   }
+
+  url.searchParams.set(
+    "next",
+    request.nextUrl.pathname + request.nextUrl.search,
+  );
 
   return NextResponse.redirect(url);
 }
@@ -137,5 +137,6 @@ export const config = {
   matcher: [
     "/stokvels/:path*",
     "/dashboard/:path*",
+    "/join/:path*",
   ],
 };

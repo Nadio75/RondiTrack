@@ -30,6 +30,9 @@ async function AuthenticatedShell({
           <Link href="/stokvels" className="block hover:underline">
             My Stokvels
           </Link>
+          <Link href="/join" className="block hover:underline">
+            Join a Stokvel
+          </Link>
           <Link href="/activity" className="block hover:underline">
             My Activity
           </Link>

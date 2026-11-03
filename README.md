@@ -3610,3 +3610,124 @@ The backend remains responsible for authorization and data access.
 Frontend controls improve usability but do not replace backend security checks.
 
 The application combines secure backend endpoints with server-rendered frontend pages and client-side pagination.
+
+## Assignment 9.1 — Join Flow, Proof of Payment and Safe Confirmations
+
+### Overview
+
+Assignment 9.1 improves the stokvel experience by allowing users to join groups through invitation codes, upload proof of payment, and safely confirm cycle closing.
+
+The implementation includes ASP.NET Core APIs, a Next.js frontend, PostgreSQL persistence, authorization, validation and integration tests.
+
+### Invitation API
+
+Chairpersons and Treasurers can generate invitation codes.
+
+A user can preview an invitation before joining. The preview explains the stokvel details, contribution amount and rules.
+
+The backend validates invitation codes and rejects invalid, expired or otherwise unusable invitations. Existing members cannot join the same stokvel twice.
+
+### Join wizard
+
+The frontend uses a three-step joining process:
+
+| Step | Screen | Purpose |
+| --- | --- | --- |
+| 1 | Invitation code | Enter or open an invitation code |
+| 2 | Rules and amount | Review the group's requirements |
+| 3 | Confirmation | Confirm membership |
+
+The wizard supports navigation between steps and URL-based progress so the user can return to the flow.
+
+The server validates membership and invitation status independently of the frontend.
+
+### Proof of payment
+
+Members can attach payment evidence to their contributions.
+
+Supported formats:
+- PDF
+- JPEG
+- PNG
+
+Maximum file size: 5 MB.
+
+The backend checks file content rather than trusting only the filename or MIME type.
+
+Proof files are stored privately and downloaded through authenticated endpoints.
+
+The upload and download endpoints enforce authorization. Unauthorized users cannot access another member's private proof.
+
+Uploads are rejected when the relevant contribution cycle is closed.
+
+### Safe cycle closing
+
+Only Treasurers can confirm manual cycle closing.
+
+The closing process has two stages:
+
+1. Preview the current cycle's closing information.
+2. Confirm the closing using the preview's snapshot token.
+
+The preview includes:
+- Cycle period and scheduled closing time.
+- Expected contribution amount.
+- Members with outstanding contributions.
+- Amount paid and amount owed.
+- Total arrears.
+- A snapshot token used to detect changes.
+
+If the preview becomes outdated, the API returns HTTP 409 Conflict. The frontend requests updated information and requires confirmation again.
+
+The backend does not permit closing before the scheduled deadline.
+
+### Idempotency
+
+Each closing confirmation includes an Idempotency-Key header.
+
+If the same request is repeated with the same key and snapshot token, the backend returns the original successful result without recording duplicate arrears.
+
+Reusing the key for a different confirmation is rejected.
+
+The database stores successful closing requests to make retries safe.
+
+### Database consistency
+
+Manual closing uses a PostgreSQL transaction.
+
+The transaction:
+1. Checks the latest closing snapshot.
+2. Records outstanding arrears.
+3. Marks the current cycle as closed.
+4. Creates the next contribution cycle when needed.
+5. Saves the confirmation request.
+
+These changes commit together so a partially completed closing does not leave inconsistent records.
+
+### Feedback and errors
+
+The frontend provides loading states, confirmation controls and messages for successful or unsuccessful actions.
+
+Relevant API responses include:
+- 400 Bad Request for invalid input.
+- 401 Unauthorized for unauthenticated requests.
+- 403 Forbidden for members without the required role.
+- 404 Not Found for inaccessible or missing resources.
+- 409 Conflict for stale closing previews or conflicting operations.
+
+### Verification
+
+Backend tests cover invitation handling, proof-of-payment security, closing previews and manual closing.
+
+Manual closing integration tests verify:
+- Treasurer closing and correct arrears.
+- Idempotent replay without duplicate arrears.
+- Ordinary member receiving HTTP 403.
+- Stale snapshot receiving HTTP 409.
+
+Frontend verification commands:
+
+```bash
+cd web-next
+npm run lint
+npm run build

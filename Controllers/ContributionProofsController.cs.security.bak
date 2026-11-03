@@ -1,0 +1,155 @@
+using System.Data;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using RondiTrack.Domain;
+using RondiTrack.Infrastructure;
+using RondiTrack.Authorization;
+using System.Security.Claims;
+
+namespace RondiTrack.Controllers;
+
+[ApiController]
+[Authorize]
+[Route("api/v1/stokvels/{stokvelId:guid}/contributions/{contributionId:guid}/proof")]
+public sealed class ContributionProofsController : ControllerBase
+{
+    private const int MaxProofBytes = 5 * 1024 * 1024;
+    private readonly RondiTrackDbContext _db;
+    private readonly IStokvelAccessService _stokvelAccess;
+
+    public ContributionProofsController(RondiTrackDbContext db, IStokvelAccessService stokvelAccess)
+    {
+        _db = db;
+        _stokvelAccess = stokvelAccess;
+    }
+
+    private Guid? CurrentUserId()
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        return Guid.TryParse(value, out var userId)
+            ? userId
+            : null;
+    }
+
+    private async Task<Contribution?> FindAccessibleContributionAsync(Guid stokvelId, Guid contributionId, Guid userId)
+    {
+        var contribution = await _db.Contributions.AsNoTracking().FirstOrDefaultAsync(c => c.Id == contributionId && c.StokvelId == stokvelId);
+        if (contribution is null) return null;
+        var access = await _stokvelAccess.CheckAsync(User, stokvelId, "Member");
+        if (access != StokvelAccessResult.Allowed) return null;
+        if (contribution.UserId == userId) return contribution;
+        var elevated = await _stokvelAccess.CheckAsync(User, stokvelId, "TreasurerOrChairperson");
+        return elevated == StokvelAccessResult.Allowed ? contribution : null;
+    }
+
+    private async Task<bool> CanManageProofAsync(Guid stokvelId, Guid userId, ContributionProof proof)
+    {
+        if (await _stokvelAccess.CheckAsync(User, stokvelId, "Member") != StokvelAccessResult.Allowed)
+            return false;
+        if (proof.UploadedByUserId == userId)
+            return true;
+        return await _stokvelAccess.CheckAsync(User, stokvelId, "Treasurer") == StokvelAccessResult.Allowed;
+    }
+
+    private static string? DetectContentType(byte[] bytes)
+    {
+        if (bytes.Length >= 5 && bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46 && bytes[4] == 0x2D) return "application/pdf";
+        if (bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return "image/jpeg";
+        if (bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 && bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A) return "image/png";
+        return null;
+    }
+
+    [HttpPost]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(6 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 6 * 1024 * 1024)]
+    public async Task<IActionResult> Upload(Guid stokvelId, Guid contributionId, [FromForm] IFormFile? file)
+    {
+        var userId = CurrentUserId();
+        if (userId is null) return Unauthorized();
+        var contribution = await FindAccessibleContributionAsync(stokvelId, contributionId, userId.Value);
+        if (contribution is null) return NotFound();
+        if (file is null || file.Length == 0) return BadRequest("Please select a receipt.");
+        if (file.Length > MaxProofBytes) return BadRequest("Receipt must be 5 MB or smaller.");
+        await using var input = file.OpenReadStream();
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await input.ReadAsync(chunk.AsMemory())) > 0)
+        {
+            if (buffer.Length + read > MaxProofBytes) return BadRequest("Receipt must be 5 MB or smaller.");
+            await buffer.WriteAsync(chunk.AsMemory(0, read));
+        }
+        var bytes = buffer.ToArray();
+        var contentType = DetectContentType(bytes);
+        if (contentType is null) return BadRequest("Only valid PDF, JPG and PNG receipts are allowed.");
+        var safeFileName = Path.GetFileName(file.FileName);
+        if (string.IsNullOrWhiteSpace(safeFileName) || safeFileName.Length > 255) return BadRequest("Invalid receipt filename.");
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
+        {
+            await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+            await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({stokvelId.ToString()}))");
+        var cycle = await _db.ContributionCycles.AsNoTracking().FirstOrDefaultAsync(c => c.Id == contribution.ContributionCycleId && c.StokvelId == stokvelId);
+        if (cycle is null) return NotFound();
+        if (cycle.IsClosed) return Conflict("This contribution cycle is closed. Its payment proof cannot be changed.");
+        var existingProof = await _db.ContributionProofs.FirstOrDefaultAsync(p => p.ContributionId == contributionId);
+        if (existingProof is not null)
+        {
+            if (!await CanManageProofAsync(stokvelId, userId.Value, existingProof)) return NotFound();
+            existingProof.Replace(userId.Value, safeFileName, contentType, bytes, DateTime.UtcNow);
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return Ok(new { existingProof.Id, existingProof.FileName, existingProof.ContentType, existingProof.UploadedAtUtc });
+        }
+        var proof = new ContributionProof(contributionId, userId.Value, safeFileName, contentType, bytes, DateTime.UtcNow);
+        _db.ContributionProofs.Add(proof);
+        await _db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return Created($"/api/v1/stokvels/{stokvelId}/contributions/{contributionId}/proof", new { proof.Id, proof.FileName, proof.ContentType, proof.UploadedAtUtc });
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Download(Guid stokvelId, Guid contributionId)
+    {
+        var userId = CurrentUserId();
+        if (userId is null) return Unauthorized();
+        var contribution = await FindAccessibleContributionAsync(stokvelId, contributionId, userId.Value);
+        if (contribution is null) return NotFound();
+        var proof = await _db.ContributionProofs.AsNoTracking().FirstOrDefaultAsync(p => p.ContributionId == contributionId);
+        if (proof is null) return NotFound();
+        if (!await CanManageProofAsync(stokvelId, userId.Value, proof)) return NotFound();
+        Response.Headers.CacheControl = "private, no-store";
+        Response.Headers.XContentTypeOptions = "nosniff";
+        return File(proof.FileData, proof.ContentType, proof.FileName);
+    }
+
+    [HttpDelete]
+    public async Task<IActionResult> Delete(Guid stokvelId, Guid contributionId)
+    {
+        var userId = CurrentUserId();
+        if (userId is null) return Unauthorized();
+        var contribution = await FindAccessibleContributionAsync(stokvelId, contributionId, userId.Value);
+        if (contribution is null) return NotFound();
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
+        {
+            await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+            await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({stokvelId.ToString()}))");
+        var cycle = await _db.ContributionCycles.AsNoTracking().FirstOrDefaultAsync(c => c.Id == contribution.ContributionCycleId && c.StokvelId == stokvelId);
+        if (cycle is null) return NotFound();
+        if (cycle.IsClosed) return Conflict("This contribution cycle is closed. Its payment proof cannot be deleted.");
+        var proof = await _db.ContributionProofs.FirstOrDefaultAsync(p => p.ContributionId == contributionId);
+        if (proof is null) return NotFound();
+        if (!await CanManageProofAsync(stokvelId, userId.Value, proof)) return NotFound();
+        _db.ContributionProofs.Remove(proof);
+        await _db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return NoContent();
+        });
+    }
+}

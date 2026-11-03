@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json.Serialization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
@@ -467,7 +467,10 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<PayoutService>();
 builder.Services.AddScoped<StokvelMembershipService>();
 builder.Services.AddScoped<RecordContributionService>();
+builder.Services.AddScoped<ContributionTransactionService>();
 builder.Services.AddScoped<CycleClosingService>();
+builder.Services.AddScoped<CycleClosingPreviewService>();
+builder.Services.AddScoped<ConfirmedCycleClosingService>();
 builder.Services.AddScoped<DatabaseHousekeepingService>();
 if (builder.Configuration.GetValue("Housekeeping:Enabled", true))
 {
@@ -578,6 +581,12 @@ builder.Services.AddAuthorization(options =>
                     "TreasurerOrChairperson"));
         });
 
+    options.AddPolicy("StokvelTreasurer", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(
+            new StokvelRoleRequirement("Treasurer"));
+    });
     options.AddPolicy("StokvelChairperson", policy =>
     {
         policy.RequireAuthenticatedUser();
@@ -666,3 +675,6 @@ app.Run();
 public partial class Program
 {
 }
+
+
+
