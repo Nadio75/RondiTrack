@@ -32,3 +32,29 @@ describe("Contribution amount validation", () => {
     expect(toCents("0.01")).toBe(1);
   });
 });
+
+describe("South African contribution input", () => {
+  it.each([
+    ["R 1 500,50", 150050],
+    ["1 500,50", 150050],
+    ["19,99", 1999],
+    ["150.50", 15050],
+  ])("accepts %s as %i cents", (input, expected) => {
+    const result = contributionSchema.safeParse({ amount: input });
+
+    expect(result.success).toBe(true);
+
+    if (result.success) {
+      expect(toCents(result.data.amount)).toBe(expected);
+    }
+  });
+
+  it.each(["", "-100", "12,345", "1,500.50", "0"])(
+    "rejects %s",
+    (input) => {
+      expect(
+        contributionSchema.safeParse({ amount: input }).success,
+      ).toBe(false);
+    },
+  );
+});

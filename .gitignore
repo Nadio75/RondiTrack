@@ -488,3 +488,27 @@ $RECYCLE.BIN/
 /test-results-6.1-after-helper.txt
 
 *.bak
+
+# Next.js generated files
+web-next/.next/
+web-next/out/
+
+# Frontend local environment files
+web-next/.env.local
+web-next/.env.*.local
+
+# Playwright generated reports and authentication sessions
+web-next/playwright-report/
+web-next/test-results/
+web-next/.auth/
+web-next/playwright/.auth/
+
+
+# Isolated E2E test credentials
+/.env.e2e
+
+# Local E2E test account credentials
+/.e2e-test-users.local
+
+# Local Lighthouse reports
+web-next/lighthouse-reports/

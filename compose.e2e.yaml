@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ronditrack_e2e
+      POSTGRES_USER: ronditrack_e2e
+      POSTGRES_PASSWORD: ${E2E_POSTGRES_PASSWORD:?Set E2E_POSTGRES_PASSWORD}
+    volumes:
+      - e2e_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ronditrack_e2e -d ronditrack_e2e"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrations
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__RondiTrack: "Host=db;Port=5432;Database=ronditrack_e2e;Username=ronditrack_e2e;Password=${E2E_POSTGRES_PASSWORD}"
+      Jwt__Issuer: RondiTrackE2E
+      Jwt__Audience: RondiTrackE2E
+      Jwt__SigningKey: ${E2E_JWT_SIGNING_KEY:?Set E2E_JWT_SIGNING_KEY}
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:5057:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__RondiTrack: "Host=db;Port=5432;Database=ronditrack_e2e;Username=ronditrack_e2e;Password=${E2E_POSTGRES_PASSWORD}"
+      Jwt__Issuer: RondiTrackE2E
+      Jwt__Audience: RondiTrackE2E
+      Jwt__SigningKey: ${E2E_JWT_SIGNING_KEY:?Set E2E_JWT_SIGNING_KEY}
+      CycleClosing__Enabled: "false"
+      Housekeeping__Enabled: "false"
+      RateLimiting__Login__PermitLimit: "100"
+
+volumes:
+  e2e_postgres_data:

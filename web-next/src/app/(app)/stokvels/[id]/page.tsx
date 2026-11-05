@@ -1,4 +1,5 @@
-﻿import { CloseCycle } from "./close-cycle";
+import { getPaymentStatus } from "@/lib/payment-status";
+import { CloseCycle } from "./close-cycle";
 import { Suspense } from "react";
 import { ContributionForm } from "./contribution-form";
 import { GenerateInvitation } from "./generate-invitation";
@@ -166,7 +167,7 @@ async function StokvelDetailContent({
             <p>Period: {membership.currentCycle.period}</p>
             <p>Status: {membership.currentCycle.status}</p>
             <p>
-              Payment: {membership.currentCycle.hasPaid ? "Paid" : "Not paid"}
+              Payment: {getPaymentStatus(membership.currentCycle.paidCents, membership.currentCycle.owedCents)}
             </p>
             <p>Amount owed: {membership.currentCycle.amountOwed}</p>
           </div>
