@@ -42,3 +42,42 @@ When the backend returns HTTP 401, authenticated API requests redirect to `/logi
 The login page recognizes `expired=1` and displays the login form even when an old encrypted session cookie still exists. This prevents the expired-session redirect loop.
 
 Automatic access-token refresh is not implemented.
+
+## Assignment 9.2 - Testing and Quality
+
+This assignment improves the RondiTrack Next.js frontend through automated testing, accessibility checks, payment validation, and production-build verification.
+
+### Testing tools
+- Vitest and React Testing Library for unit and component tests.
+- Playwright for browser tests.
+- axe-core for automated accessibility checks.
+- Lighthouse for performance auditing.
+
+### Run the checks
+From the web-next directory:
+
+    npm run lint
+    npx tsc --noEmit
+    npm test
+    npm run build
+
+To run browser tests:
+
+    npx playwright install chromium
+    npx playwright test --workers=1
+
+### Verified local results
+- 93 unit tests passed.
+- 11 Playwright browser tests passed.
+- TypeScript and the production build passed.
+- Lighthouse mobile performance scores: 90, 84, 92 (median 90).
+- Lighthouse accessibility, best practices, and SEO: 100 in the tested runs.
+
+### Payment handling
+The frontend distinguishes between Not paid, Partially paid, and Paid in full. Money calculations use integer cents to avoid floating-point rounding problems.
+
+### Continuous integration
+The GitHub Actions workflow is in .github/workflows/ci.yml. It runs .NET backend checks and frontend linting, TypeScript checks, unit tests, and a production build. Database-dependent Playwright tests are currently run locally, not in GitHub Actions.
+
+### Local test configuration
+Some browser tests require a running API, test database, and local test-user fixtures. Do not commit local environment files, passwords, or test-user credentials. Automated accessibility checks do not guarantee complete WCAG compliance.

@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { southAfricanDaysToUtcRange } from "./south-african-dates";
 
 describe("southAfricanDaysToUtcRange", () => {
@@ -65,5 +65,23 @@ describe("southAfricanDaysToUtcRange", () => {
     expect(() =>
       southAfricanDaysToUtcRange("2027-02-29"),
     ).toThrow();
+  });
+
+  it("includes a contribution at 23:30 on the last day of October", () => {
+    const range = southAfricanDaysToUtcRange(
+      "2026-10-01",
+      "2026-10-31",
+    );
+
+    // 23:30 SAST on 31 October is 21:30 UTC.
+    const contributionTime = new Date(
+      "2026-10-31T21:30:00.000Z",
+    ).getTime();
+
+    const from = new Date(range.fromUtc!).getTime();
+    const to = new Date(range.toUtc!).getTime();
+
+    expect(contributionTime).toBeGreaterThanOrEqual(from);
+    expect(contributionTime).toBeLessThan(to);
   });
 });

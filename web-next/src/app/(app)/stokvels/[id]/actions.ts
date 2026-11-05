@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
@@ -12,6 +12,10 @@ export type ContributionActionState = {
   correlationId?: string;
   retryKey?: string;
   retryFingerprint?: string;
+  submittedAmount?: string;
+  fieldErrors?: {
+    amount?: string;
+  };
 };
 
 
@@ -36,11 +40,18 @@ export async function recordContribution(
   });
 
   if (!parsed.success) {
-    return {
-      status: "error",
-      message: parsed.error.issues[0]?.message ?? "Invalid amount.",
-    };
-  }
+  const message =
+    parsed.error.issues[0]?.message ?? "Invalid amount.";
+
+  return {
+    status: "error",
+    message,
+    submittedAmount: String(formData.get("amount") ?? ""),
+    fieldErrors: {
+      amount: message,
+    },
+  };
+}
 
   const session = await getSession();
 
@@ -116,6 +127,7 @@ export async function recordContribution(
         correlationId: error.correlationId ?? undefined,
         retryKey: idempotencyKey,
         retryFingerprint: fingerprint,
+      submittedAmount: String(formData.get("amount") ?? ""),
       };
     }
 
@@ -124,6 +136,7 @@ export async function recordContribution(
       message: "A network or server error occurred. Please try again.",
       retryKey: idempotencyKey,
       retryFingerprint: fingerprint,
+      submittedAmount: String(formData.get("amount") ?? ""),
     };
   }
 
@@ -136,5 +149,3 @@ export async function recordContribution(
     message: "Contribution recorded successfully.",
   };
 }
-
-
