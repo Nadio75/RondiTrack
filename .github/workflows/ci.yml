@@ -67,8 +67,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Run ESLint
+           - name: Run ESLint
         run: npm run lint
+
+      - name: Generate Next.js types
+        run: npx next typegen
 
       - name: Check TypeScript
         run: npx tsc --noEmit
