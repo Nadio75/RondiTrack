@@ -582,6 +582,81 @@ string? idempotencyKey,
     }
 
 
+    [HttpGet("{id}/cycles/{cycleId}/payout-rotation")]
+    [EndpointSummary("Get the server-owned payout rotation")]
+    [EndpointDescription("""
+        Returns stokvel members in deterministic payout order,
+        with recorded payout amounts and the next eligible recipient.
+        Only members of the stokvel can access this endpoint.
+        Scheduled dates are null until scheduling rules are defined.
+        A paid-out cycle does not advertise another actionable payout.
+        """)]
+    [ProducesResponseType<PayoutRotationResponse>(
+        StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(
+        StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<IActionResult> GetPayoutRotation(
+        Guid id,
+        Guid cycleId)
+    {
+        var denied = await CheckStokvelAccessAsync(id, "Member");
+        if (denied is not null)
+            return denied;
+
+        var cycle = await _db.ContributionCycles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c =>
+                c.Id == cycleId &&
+                c.StokvelId == id);
+
+        if (cycle is null)
+            throw new NotFoundException(
+                "Contribution cycle not found for this stokvel.");
+
+        var stokvel = await _db.Stokvels
+            .AsNoTracking()
+            .FirstAsync(s => s.Id == id);
+
+        var members = await _db.StokvelMembers
+            .AsNoTracking()
+            .Where(m => m.StokvelId == id)
+            .Select(m => new RotationMember(
+                m.UserId,
+                m.User.Name,
+                m.JoinedAtUtc))
+            .ToListAsync();
+
+        var payments = await _db.Payouts
+            .AsNoTracking()
+            .Where(p => p.StokvelId == id)
+            .Select(p => new RotationPayment(
+                p.RecipientUserId,
+                p.Amount))
+            .ToListAsync();
+
+        var entries = PayoutRotationCalculator.Calculate(
+            members,
+            payments,
+            stokvel.ContributionAmount);
+
+        if (cycle.Status == "PaidOut")
+        {
+            entries = entries
+                .Select(entry => entry.IsNext
+                    ? entry with
+                    {
+                        Status = "upcoming",
+                        IsNext = false
+                    }
+                    : entry)
+                .ToList();
+        }
+
+        return Ok(new PayoutRotationResponse(
+            id,
+            cycleId,
+            entries));
+    }
     [HttpGet("{id}/cycles/{cycleId}/payout")]
     [EndpointSummary("Get the payout for a contribution cycle")]
     [EndpointDescription("""
