@@ -77,6 +77,7 @@ public class PayoutService
                         m.StokvelId == stokvelId &&
                         !alreadyPaidUserIds.Contains(m.UserId))
                     .OrderBy(m => m.JoinedAtUtc)
+                    .ThenBy(m => m.UserId)
                     .Select(m => m.UserId)
                     .FirstOrDefaultAsync();
 
