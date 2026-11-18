@@ -1,4 +1,4 @@
-﻿
+
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -37,6 +37,22 @@ public class RecordContributionService
         string idempotencyKey,
         ContributionRequest request)
     {
+        if (_transactionService is not null)
+        {
+            var (atomicResponse, isReplay) =
+                await _transactionService.RecordIdempotentAsync(
+                    stokvelId,
+                    idempotencyKey,
+                    request);
+
+            if (!isReplay)
+            {
+                RondiTrackMetrics.ContributionsRecorded.Add(1);
+            }
+
+            return atomicResponse;
+        }
+
         var requestHash = Hash(request);
 
         var existing = await _idempotencyStore.FindAsync(

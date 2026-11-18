@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json.Serialization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
@@ -456,9 +456,9 @@ builder.Services.AddScoped<
     IContributionStore,
     RondiTrack.Infrastructure.Data.EfContributionStore>();
 
-builder.Services.AddSingleton<
+builder.Services.AddScoped<
     IIdempotencyStore,
-    InMemoryIdempotencyStore>();
+    RondiTrack.Infrastructure.Data.EfIdempotencyStore>();
 
 builder.Services.AddScoped<
     IContributionCycleStore,

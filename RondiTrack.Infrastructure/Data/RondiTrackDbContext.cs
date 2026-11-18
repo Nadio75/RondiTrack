@@ -1,4 +1,4 @@
-﻿
+
 namespace RondiTrack.Infrastructure;
 
 using Microsoft.EntityFrameworkCore;
@@ -24,8 +24,38 @@ public class RondiTrackDbContext : DbContext
     public DbSet<ContributionArrear> ContributionArrears => Set<ContributionArrear>();
     public DbSet<CycleClosingRequest> CycleClosingRequests => Set<CycleClosingRequest>();
 
+    public DbSet<IdempotencyRecord> IdempotencyRecords =>
+        Set<IdempotencyRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<IdempotencyRecord>(b =>
+        {
+            b.HasKey(r => r.Key);
+
+            b.Property(r => r.Key)
+                .HasMaxLength(128)
+                .IsRequired();
+
+            b.Property(r => r.RequestHash)
+                .HasMaxLength(64)
+                .IsRequired();
+
+            b.Property(r => r.ResponseStatusCode)
+                .IsRequired();
+
+            b.Property(r => r.ResponseBodyJson)
+                .IsRequired();
+
+            b.Property(r => r.CreatedAt)
+                .IsRequired();
+
+            b.Property(r => r.ExpiresAtUtc)
+                .IsRequired();
+
+            b.HasIndex(r => r.ExpiresAtUtc);
+        });
+
         modelBuilder.Entity<CycleClosingRequest>(b =>
         {
             b.HasKey(r => r.Id);

@@ -213,6 +213,37 @@ namespace RondiTrack.Infrastructure.Migrations
                     b.ToTable("CycleClosingRequests");
                 });
 
+            modelBuilder.Entity("RondiTrack.Domain.IdempotencyRecord", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ResponseBodyJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("ResponseStatusCode")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Key");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.ToTable("IdempotencyRecords");
+                });
+
             modelBuilder.Entity("RondiTrack.Domain.Payout", b =>
                 {
                     b.Property<Guid>("Id")
