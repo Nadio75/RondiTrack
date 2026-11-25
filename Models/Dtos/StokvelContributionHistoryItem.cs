@@ -10,5 +10,9 @@ public sealed record StokvelContributionHistoryItem(
     Guid MemberId,
     string MemberName,
     decimal Amount,
-    DateTime CreatedAt
-);
+    DateTime CreatedAt)
+{
+    public bool IsConfirmed { get; init; }
+
+    public DateTime? ConfirmedAtUtc { get; init; }
+}

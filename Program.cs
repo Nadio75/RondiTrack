@@ -604,39 +604,56 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddScoped<
     RondiTrack.Services.Notifications.ContributionNotificationService>();
 
-var firebaseCredentialPath =
-    builder.Configuration["Firebase:CredentialPath"];
+builder.Services.AddSingleton<
+    RondiTrack.Services.Notifications.IPushNotificationSender>(services =>
+{
+    var configuration = services.GetRequiredService<IConfiguration>();
 
-if (string.IsNullOrWhiteSpace(firebaseCredentialPath))
-{
-    builder.Services.AddSingleton<
-        RondiTrack.Services.Notifications.IPushNotificationSender,
-        RondiTrack.Services.Notifications.LoggingPushNotificationSender>();
-}
-else
-{
-    if (!File.Exists(firebaseCredentialPath))
+    var credentialPath = configuration["Firebase:CredentialPath"];
+
+    if (string.IsNullOrWhiteSpace(credentialPath))
+    {
+        return ActivatorUtilities.CreateInstance<
+            RondiTrack.Services.Notifications.LoggingPushNotificationSender>(
+                services);
+    }
+
+    if (!File.Exists(credentialPath))
+    {
         throw new InvalidOperationException(
             "Configured Firebase credential file was not found.");
+    }
 
     var firebaseApp = FirebaseAdmin.FirebaseApp.Create(
         new FirebaseAdmin.AppOptions
         {
             Credential = Google.Apis.Auth.OAuth2.CredentialFactory
                 .FromFile<Google.Apis.Auth.OAuth2.ServiceAccountCredential>(
-                    firebaseCredentialPath)
+                    credentialPath)
                 .ToGoogleCredential()
-        });
+        },
+        $"ronditrack-{Guid.NewGuid():N}");
 
-    builder.Services.AddSingleton(
-        FirebaseAdmin.Messaging.FirebaseMessaging
-            .GetMessaging(firebaseApp));
+    try
+    {
+        var messaging =
+            FirebaseAdmin.Messaging.FirebaseMessaging.GetMessaging(firebaseApp);
 
-    builder.Services.AddSingleton<
-        RondiTrack.Services.Notifications.IPushNotificationSender,
-        RondiTrack.Services.Notifications.FirebasePushNotificationSender>();
-}
+        var sender = ActivatorUtilities.CreateInstance<
+            RondiTrack.Services.Notifications.FirebasePushNotificationSender>(
+                services, messaging);
 
+        services.GetRequiredService<IHostApplicationLifetime>()
+            .ApplicationStopped.Register(() => firebaseApp.Delete());
+
+        return sender;
+    }
+    catch
+    {
+        firebaseApp.Delete();
+        throw;
+    }
+});
 
 var app = builder.Build();
 
@@ -713,5 +730,6 @@ app.Run();
 public partial class Program
 {
 }
+
 
 
