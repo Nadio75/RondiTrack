@@ -32,6 +32,12 @@ namespace RondiTrack.Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<DateTime?>("ConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ConfirmedByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("ContributionCycleId")
                         .HasColumnType("uuid");
 
