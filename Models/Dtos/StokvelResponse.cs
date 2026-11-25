@@ -1,4 +1,5 @@
-using RondiTrack.Domain;
+﻿using RondiTrack.Domain;
+
 namespace RondiTrack.Models.Dtos;
 
 public record StokvelResponse(
@@ -7,7 +8,18 @@ public record StokvelResponse(
     decimal ContributionAmount,
     int MemberCount)
 {
-    // Converts a Stokvel entity into a response, showing a member count instead of the raw internal id list.
+    public string Rules { get; init; } = string.Empty;
+
+    public int ClosingDayOfMonth { get; init; } = 25;
+
     public static StokvelResponse FromStokvel(Stokvel stokvel) =>
-        new(stokvel.Id, stokvel.Name, stokvel.ContributionAmount, stokvel.MemberIds.Count);
+        new(
+            stokvel.Id,
+            stokvel.Name,
+            stokvel.ContributionAmount,
+            stokvel.MemberIds.Count)
+        {
+            Rules = stokvel.Rules,
+            ClosingDayOfMonth = stokvel.ClosingDayOfMonth
+        };
 }

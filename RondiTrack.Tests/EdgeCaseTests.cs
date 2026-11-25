@@ -1,4 +1,4 @@
-using RondiTrack.Models.Dtos;
+﻿using RondiTrack.Models.Dtos;
 using RondiTrack.Tests.TestSupport;
 
 namespace RondiTrack.Tests;
@@ -148,8 +148,25 @@ public async Task A_stokvel_name_is_accepted_at_100_characters_and_rejected_at_1
     [Fact]
     public async Task Cycles_can_no_longer_be_listed_once_their_stokvel_is_deleted()
     {
-        var stokvel = await _client.CreateStokvelAsync();
-        await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+        var creator = await _client.CreateUserAsync("Deletion Test Creator");
+
+        _client.UseTestUser(creator.Id);
+
+        var created = await _client.PostAsJsonAsync(
+            "/api/v1/stokvels",
+            new
+            {
+                name = "Deletion Test " + Guid.NewGuid(),
+                contributionAmount = 500
+            });
+
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        var stokvel = await created.Content
+            .ReadFromJsonAsync<StokvelResponse>();
+
+        Assert.NotNull(stokvel);
+        Assert.Equal(1, stokvel.MemberCount);
 
         await _client.CreateCycleAsync(stokvel.Id);
 

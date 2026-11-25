@@ -108,9 +108,25 @@ public async Task Updating_a_stokvel_replaces_name_and_contribution_amount()
    [Fact]
 public async Task Deleting_a_stokvel_returns_204_then_404_on_a_second_delete()
 {
-    var stokvel = await _client.CreateStokvelAsync();
+    var creator = await _client.CreateUserAsync("Deletion Test Creator");
 
-    await _client.ArrangeChairpersonAsync(_factory, stokvel.Id);
+        _client.UseTestUser(creator.Id);
+
+        var created = await _client.PostAsJsonAsync(
+            "/api/v1/stokvels",
+            new
+            {
+                name = "Deletion Test " + Guid.NewGuid(),
+                contributionAmount = 500
+            });
+
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        var stokvel = await created.Content
+            .ReadFromJsonAsync<StokvelResponse>();
+
+        Assert.NotNull(stokvel);
+        Assert.Equal(1, stokvel.MemberCount);
 
     var first = await _client.DeleteAsync($"/api/v1/stokvels/{stokvel.Id}");
     var second = await _client.DeleteAsync($"/api/v1/stokvels/{stokvel.Id}");
@@ -224,5 +240,127 @@ public async Task Adding_the_same_member_twice_returns_409_and_the_count_stays_a
         var response = await _client.AddMemberAsync(stokvel.Id, Guid.Empty);
 
         response.AssertProblem(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Creating_stokvel_with_first_cycle_saves_schedule()
+    {
+        var creator = await _client.CreateUserAsync(
+            "Schedule Test Creator");
+
+        _client.UseTestUser(creator.Id);
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/stokvels",
+            new
+            {
+                name = "Schedule Test " + Guid.NewGuid(),
+                contributionAmount = 1500,
+                rules = "Pay on time.",
+                closingDayOfMonth = 20,
+                firstCyclePeriod = "2027-12"
+            });
+
+        Assert.Equal(
+            HttpStatusCode.Created,
+            response.StatusCode);
+
+        var created = await response.Content
+            .ReadFromJsonAsync<StokvelResponse>();
+
+        Assert.NotNull(created);
+        Assert.Equal(1, created.MemberCount);
+        Assert.Equal(20, created.ClosingDayOfMonth);
+        Assert.Equal("Pay on time.", created.Rules);
+
+        using var scope = _factory.Services.CreateScope();
+
+        var db = scope.ServiceProvider
+            .GetRequiredService<RondiTrackDbContext>();
+
+        var group = await db.Stokvels
+            .SingleAsync(s => s.Id == created.Id);
+
+        Assert.Equal(20, group.ClosingDayOfMonth);
+        Assert.Equal("Pay on time.", group.Rules);
+
+        var cycle = await db.ContributionCycles
+            .SingleAsync(c => c.StokvelId == created.Id);
+
+        Assert.Equal("2027-12", cycle.Period);
+        Assert.Equal(1500m, cycle.TargetAmount);
+        Assert.False(cycle.IsClosed);
+
+        var membership = await db.StokvelMembers
+            .SingleAsync(m => m.StokvelId == created.Id);
+
+        Assert.Equal(creator.Id, membership.UserId);
+        Assert.Equal("Chairperson", membership.Role);
+
+        var fetched = await _client
+            .GetFromJsonAsync<StokvelResponse>(
+                $"/api/v1/stokvels/{created.Id}");
+
+        Assert.NotNull(fetched);
+        Assert.Equal(20, fetched.ClosingDayOfMonth);
+        Assert.Equal("Pay on time.", fetched.Rules);
+    }
+
+    [Theory]
+    [InlineData(0, "2027-12")]
+    [InlineData(32, "2027-12")]
+    [InlineData(25, "2027-13")]
+    [InlineData(25, "December")]
+    public async Task Invalid_schedule_does_not_create_stokvel(
+        int closingDay,
+        string period)
+    {
+        var creator = await _client.CreateUserAsync(
+            "Invalid Schedule Creator");
+
+        _client.UseTestUser(creator.Id);
+
+        var name = "Invalid Schedule " + Guid.NewGuid();
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/stokvels",
+            new
+            {
+                name,
+                contributionAmount = 500,
+                closingDayOfMonth = closingDay,
+                firstCyclePeriod = period
+            });
+
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            response.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+
+        var db = scope.ServiceProvider
+            .GetRequiredService<RondiTrackDbContext>();
+
+        Assert.False(await db.Stokvels
+            .AnyAsync(s => s.Name == name));
+    }
+
+    [Fact]
+    public async Task Creating_without_schedule_preserves_defaults()
+    {
+        var created = await _client.CreateStokvelAsync();
+
+        using var scope = _factory.Services.CreateScope();
+
+        var db = scope.ServiceProvider
+            .GetRequiredService<RondiTrackDbContext>();
+
+        var group = await db.Stokvels
+            .SingleAsync(s => s.Id == created.Id);
+
+        Assert.Equal(25, group.ClosingDayOfMonth);
+
+        Assert.False(await db.ContributionCycles
+            .AnyAsync(c => c.StokvelId == created.Id));
     }
 }

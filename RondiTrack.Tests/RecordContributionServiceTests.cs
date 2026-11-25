@@ -1,4 +1,4 @@
-using RondiTrack.Domain;
+﻿using RondiTrack.Domain;
 namespace RondiTrack.Tests;
 
 using RondiTrack.Data;
@@ -339,5 +339,37 @@ public class RecordContributionServiceTests
             _service.ExecuteAsync(s.Stokvel.Id, "key-1", RequestFor(s, amount: 0m)));
 
         Assert.Equal(0, await ContributionCountAsync());
+    }
+
+    [Theory]
+    [InlineData(499)]
+    [InlineData(501)]
+    [InlineData(250)]
+    [InlineData(1000)]
+    public async Task Incorrect_monthly_amount_is_rejected(int amount)
+    {
+        var s = await ArrangeMemberWithCycleAsync();
+
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _service.ExecuteAsync(
+                s.Stokvel.Id,
+                "incorrect-amount",
+                RequestFor(s, amount)));
+
+        Assert.Equal(0, await ContributionCountAsync());
+    }
+
+    [Fact]
+    public async Task Correct_monthly_amount_is_accepted()
+    {
+        var s = await ArrangeMemberWithCycleAsync();
+
+        var response = await _service.ExecuteAsync(
+            s.Stokvel.Id,
+            "correct-amount",
+            RequestFor(s, 500m));
+
+        Assert.Equal(500m, response.Amount);
+        Assert.Equal(1, await ContributionCountAsync());
     }
 }

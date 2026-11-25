@@ -1,4 +1,4 @@
-﻿namespace RondiTrack.Services.Notifications;
+namespace RondiTrack.Services.Notifications;
 
 public sealed record PushNotification(
     Guid StokvelId,

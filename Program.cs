@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json.Serialization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
@@ -655,6 +655,24 @@ builder.Services.AddSingleton<
     }
 });
 
+if (builder.Environment.IsStaging())
+{
+    builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders =
+            Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor |
+            Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+
+        options.ForwardLimit = 1;
+
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+
+        options.KnownProxies.Add(System.Net.IPAddress.Loopback);
+        options.KnownProxies.Add(System.Net.IPAddress.IPv6Loopback);
+    });
+}
+
 var app = builder.Build();
 
 // --------------------------------------------------
@@ -667,6 +685,11 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi().AllowAnonymous();
     app.MapScalarApiReference().AllowAnonymous();
+}
+
+if (app.Environment.IsStaging())
+{
+    app.UseForwardedHeaders();
 }
 
 app.UseHttpsRedirection();
@@ -730,6 +753,3 @@ app.Run();
 public partial class Program
 {
 }
-
-
-

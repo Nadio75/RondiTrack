@@ -4,7 +4,9 @@ namespace RondiTrack.Models;
 public record CreateStokvelRequest(
     string Name,
     decimal ContributionAmount,
-    string? Rules = null
+    string? Rules = null,
+    int? ClosingDayOfMonth = null,
+    string? FirstCyclePeriod = null
 );
 
 public record AddMemberRequest(Guid UserId);

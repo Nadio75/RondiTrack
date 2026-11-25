@@ -121,6 +121,12 @@ if (cycle.IsClosed)
                 "This member has already paid for this cycle.");
         }
 
+        if (request.Amount != stokvel.ContributionAmount)
+        {
+            throw new BusinessRuleViolationException(
+                "The contribution must equal the stokvel's required monthly contribution.");
+        }
+
         Contribution contribution;
 
         try
