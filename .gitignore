@@ -512,3 +512,13 @@ web-next/playwright/.auth/
 
 # Local Lighthouse reports
 web-next/lighthouse-reports/
+
+# Assignment 12.2 - private release credentials
+*service-account*.json
+firebase-adminsdk*.json
+firebase-credentials*.json
+*.jks
+*.keystore
+key.properties
+/secrets/
+

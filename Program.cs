@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json.Serialization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
@@ -600,6 +600,44 @@ builder.Services.AddAuthorization(options =>
 // 10. Build application
 // --------------------------------------------------
 
+
+builder.Services.AddScoped<
+    RondiTrack.Services.Notifications.ContributionNotificationService>();
+
+var firebaseCredentialPath =
+    builder.Configuration["Firebase:CredentialPath"];
+
+if (string.IsNullOrWhiteSpace(firebaseCredentialPath))
+{
+    builder.Services.AddSingleton<
+        RondiTrack.Services.Notifications.IPushNotificationSender,
+        RondiTrack.Services.Notifications.LoggingPushNotificationSender>();
+}
+else
+{
+    if (!File.Exists(firebaseCredentialPath))
+        throw new InvalidOperationException(
+            "Configured Firebase credential file was not found.");
+
+    var firebaseApp = FirebaseAdmin.FirebaseApp.Create(
+        new FirebaseAdmin.AppOptions
+        {
+            Credential = Google.Apis.Auth.OAuth2.CredentialFactory
+                .FromFile<Google.Apis.Auth.OAuth2.ServiceAccountCredential>(
+                    firebaseCredentialPath)
+                .ToGoogleCredential()
+        });
+
+    builder.Services.AddSingleton(
+        FirebaseAdmin.Messaging.FirebaseMessaging
+            .GetMessaging(firebaseApp));
+
+    builder.Services.AddSingleton<
+        RondiTrack.Services.Notifications.IPushNotificationSender,
+        RondiTrack.Services.Notifications.FirebasePushNotificationSender>();
+}
+
+
 var app = builder.Build();
 
 // --------------------------------------------------
@@ -675,3 +713,5 @@ app.Run();
 public partial class Program
 {
 }
+
+
