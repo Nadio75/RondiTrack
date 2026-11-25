@@ -213,6 +213,25 @@ namespace RondiTrack.Infrastructure.Migrations
                     b.ToTable("CycleClosingRequests");
                 });
 
+            modelBuilder.Entity("RondiTrack.Domain.DeviceRegistration", b =>
+                {
+                    b.Property<string>("InstallationId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("InstallationId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("DeviceRegistrations", (string)null);
+                });
+
             modelBuilder.Entity("RondiTrack.Domain.IdempotencyRecord", b =>
                 {
                     b.Property<string>("Key")
@@ -533,6 +552,15 @@ namespace RondiTrack.Infrastructure.Migrations
                     b.HasOne("RondiTrack.Domain.Stokvel", null)
                         .WithMany()
                         .HasForeignKey("StokvelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("RondiTrack.Domain.DeviceRegistration", b =>
+                {
+                    b.HasOne("RondiTrack.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
