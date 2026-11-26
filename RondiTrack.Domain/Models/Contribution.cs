@@ -1,4 +1,4 @@
-// Models/Contribution.cs
+﻿// Models/Contribution.cs
 namespace RondiTrack.Domain;
 
 public class Contribution
@@ -9,6 +9,30 @@ public class Contribution
     public decimal Amount { get; }
     public Guid ContributionCycleId { get; }
     public DateTime CreatedAt { get; }
+
+    public DateTime? ConfirmedAtUtc { get; private set; }
+
+    public Guid? ConfirmedByUserId { get; private set; }
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public bool IsConfirmed => ConfirmedAtUtc.HasValue;
+
+    public bool Confirm(Guid treasurerId)
+    {
+        if (treasurerId == Guid.Empty)
+            throw new ArgumentException(
+                "A valid treasurer is required.",
+                nameof(treasurerId));
+
+        if (IsConfirmed)
+            return false;
+
+        ConfirmedByUserId = treasurerId;
+        ConfirmedAtUtc = DateTime.UtcNow;
+
+        return true;
+    }
+
     private Contribution() { } // EF Core materializes instances via this, writing straight to the backing fields
     public StokvelMember Member { get; private set; } = null!;
 
@@ -31,3 +55,4 @@ public class Contribution
         CreatedAt = DateTime.UtcNow;
     }
 }
+

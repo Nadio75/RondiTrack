@@ -1,4 +1,4 @@
-
+﻿
 namespace RondiTrack.Infrastructure;
 
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +13,7 @@ public class RondiTrackDbContext : DbContext
     }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<DeviceRegistration> DeviceRegistrations => Set<DeviceRegistration>();
     public DbSet<Stokvel> Stokvels => Set<Stokvel>();
     public DbSet<StokvelMember> StokvelMembers => Set<StokvelMember>();
     public DbSet<StokvelInvitation> StokvelInvitations => Set<StokvelInvitation>();
@@ -29,6 +30,28 @@ public class RondiTrackDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+
+        modelBuilder.Entity<DeviceRegistration>(b =>
+        {
+            b.ToTable("DeviceRegistrations");
+
+            b.HasKey(d => d.InstallationId);
+
+            b.Property(d => d.InstallationId)
+                .HasMaxLength(256)
+                .IsRequired();
+
+            b.Property(d => d.UserId).IsRequired();
+            b.Property(d => d.UpdatedAtUtc).IsRequired();
+
+            b.HasIndex(d => d.UserId);
+
+            b.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<IdempotencyRecord>(b =>
         {
             b.HasKey(r => r.Key);
@@ -485,3 +508,4 @@ modelBuilder.Entity<ContributionProof>(b =>
         });
     }
 }
+

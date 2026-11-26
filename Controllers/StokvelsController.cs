@@ -142,7 +142,7 @@ public class StokvelsController : ControllerBase
             size = MaxPageSize;
 
         // --- sort allow-list ---
-        // Supported: joinedAt (default). Anything else → 400.
+        // Supported: joinedAt (default). Anything else â†’ 400.
         var sortField = (sort ?? "joinedAt").ToLowerInvariant();
         if (sortField is not "joinedat")
             return BadRequest(new ProblemDetails
@@ -218,12 +218,12 @@ public class StokvelsController : ControllerBase
     [HttpPost]
     [EndpointSummary("Create a stokvel")]
     [EndpointDescription("""
-        Creates a new stokvel with no members. The server generates the `id`.
+        Creates a stokvel with its creator as chairperson and an optional first monthly contribution cycle.
 
         **Rules:** `name` is required and at most 100 characters. `contributionAmount` must be greater
         than zero.
 
-        **Guarantees:** on `201`, the stokvel exists with `memberCount` 0, and a `Location` header
+        **Guarantees:** on `201`, the stokvel exists with `memberCount` 1, and a `Location` header
         points to it.
 
         **Does not:** stop two stokvels sharing the same name.
@@ -240,7 +240,7 @@ public class StokvelsController : ControllerBase
               "id": "9c1d7e40-2b6a-4f3e-8d55-7a0b1c2d3e4f",
               "name": "Soweto Savings Club",
               "contributionAmount": 500,
-              "memberCount": 0
+              "memberCount": 1
             }
         """)]
     [ProducesResponseType<StokvelResponse>(StatusCodes.Status201Created)]
@@ -266,6 +266,9 @@ public class StokvelsController : ControllerBase
                 request.Name,
                 request.ContributionAmount);
             stokvel.UpdateRules(request.Rules ?? "");
+
+            stokvel.UpdateClosingDayOfMonth(
+                request.ClosingDayOfMonth ?? 25);
         }
         catch (ArgumentException ex)
         {
@@ -280,7 +283,18 @@ public class StokvelsController : ControllerBase
                 creatorId,
                 "Chairperson"));
 
+        if (request.FirstCyclePeriod is not null)
+        {
+            _db.ContributionCycles.Add(new ContributionCycle(
+                stokvel.Id,
+                request.FirstCyclePeriod,
+                stokvel.ContributionAmount));
+        }
+
+        // EF Core saves the stokvel, membership and optional
+        // first contribution cycle in one transaction.
         await _db.SaveChangesAsync();
+
         stokvel.LoadMembers(new[] { creatorId });
 
         var response = StokvelMapper.ToResponse(stokvel);
@@ -345,30 +359,136 @@ public class StokvelsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [EndpointSummary("Delete a stokvel")]
-    [EndpointDescription("""
-        Deletes the stokvel with the given id. Returns `204` with no body.
-
-        **Does not:** delete the stokvel's contribution cycles or recorded contributions. They are left
-        behind but can no longer be reached, because every cycle route needs an existing stokvel.
-
-        **Errors:** `400` if `id` is not a valid GUID; `404` if no stokvel has that id (so deleting the
-        same stokvel twice gives `204` and then `404`).
-        """)]
+    [EndpointSummary("Delete an unused stokvel")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var denied = await CheckStokvelAccessAsync(id, "Chairperson");
-        if (denied is not null)
-            return denied;
-        var deleted = await _store.DeleteStokvelAsync(id);
-        if (!deleted) throw new NotFoundException("Stokvel not found.");
-        return NoContent();
+        return await ChangeMembershipAsync(id, true);
     }
 
-    [HttpPost("{id}/members")]
+    [HttpDelete("{id}/members/me")]
+    [EndpointSummary("Leave a stokvel voluntarily")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Leave(Guid id)
+    {
+        return await ChangeMembershipAsync(id, false);
+    }
+
+    private async Task<IActionResult> ChangeMembershipAsync(
+        Guid id, bool deleteStokvel)
+    {
+        var caller = User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub");
+
+        if (!Guid.TryParse(caller, out var userId))
+            return Unauthorized();
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
+        {
+            _db.ChangeTracker.Clear();
+
+            await using var transaction =
+                await _db.Database.BeginTransactionAsync(
+                    System.Data.IsolationLevel.Serializable);
+
+            // Prevent concurrent writes to membership and
+            // financial tables while checking deletion safety.
+            await _db.Database.ExecuteSqlRawAsync(
+                """
+                LOCK TABLE "Stokvels", "StokvelMembers",
+                "ContributionCycles", "Contributions",
+                "Payouts", "ContributionArrears",
+                "CycleClosingRequests"
+                IN SHARE ROW EXCLUSIVE MODE
+                """);
+
+            var membership = await _db.StokvelMembers
+                .SingleOrDefaultAsync(m =>
+                    m.StokvelId == id && m.UserId == userId);
+
+            if (membership is null)
+                return NotFound();
+
+            if (deleteStokvel)
+            {
+                if (membership.Role != "Chairperson")
+                    return StatusCode(403);
+
+                var hasOtherMembers = await _db.StokvelMembers
+                    .AnyAsync(m => m.StokvelId == id &&
+                        m.UserId != userId);
+
+                if (hasOtherMembers)
+                    return Conflict(new ProblemDetails
+                    {
+                        Status = 409,
+                        Detail = "Other members still belong to this stokvel."
+                    });
+
+                var hasHistory =
+                    await _db.Contributions.AnyAsync(c => c.StokvelId == id)
+                    || await _db.Payouts.AnyAsync(p => p.StokvelId == id)
+                    || await _db.ContributionArrears.AnyAsync(a => a.StokvelId == id)
+                    || await _db.CycleClosingRequests.AnyAsync(r => r.StokvelId == id)
+                    || await _db.ContributionCycles.AnyAsync(c =>
+                        c.StokvelId == id &&
+                        (c.IsClosed || c.Status == "PaidOut"));
+
+                if (hasHistory)
+                    return Conflict(new ProblemDetails
+                    {
+                        Status = 409,
+                        Detail = "Financial history prevents permanent deletion."
+                    });
+
+                var stokvel = await _db.Stokvels.FindAsync(id);
+
+                if (stokvel is null)
+                    return NotFound();
+
+                _db.Stokvels.Remove(stokvel);
+            }
+            else
+            {
+                if (membership.Role != "Member")
+                    return Conflict(new ProblemDetails
+                    {
+                        Status = 409,
+                        Detail = "Transfer your leadership responsibilities before leaving."
+                    });
+
+                var hasHistory =
+                    await _db.Contributions.AnyAsync(c =>
+                        c.StokvelId == id && c.UserId == userId)
+                    || await _db.Payouts.AnyAsync(p =>
+                        p.StokvelId == id && p.RecipientUserId == userId)
+                    || await _db.ContributionArrears.AnyAsync(a =>
+                        a.StokvelId == id && a.UserId == userId)
+                    || await _db.ContributionCycles.AnyAsync(c =>
+                        c.StokvelId == id && !c.IsClosed);
+
+                if (hasHistory)
+                    return Conflict(new ProblemDetails
+                    {
+                        Status = 409,
+                        Detail = "Financial history or an open cycle prevents leaving."
+                    });
+
+                _db.StokvelMembers.Remove(membership);
+            }
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return NoContent();
+        });
+    }
+
+[HttpPost("{id}/members")]
     [EndpointSummary("Add a user to a stokvel as a member")]
     [EndpointDescription("""
         Makes an existing user a member of an existing stokvel. Returns `204` with no body; call
@@ -394,7 +514,7 @@ public class StokvelsController : ControllerBase
         var denied = await CheckStokvelAccessAsync(id, "Chairperson");
         if (denied is not null)
             return denied;
-        // No switch, no ToProblem — if this throws, the handler answers. If it doesn't, it worked.
+        // No switch, no ToProblem â€” if this throws, the handler answers. If it doesn't, it worked.
         await _membershipService.AddMemberAsync(id, request.UserId);
         return NoContent();
     }
@@ -719,8 +839,8 @@ string? idempotencyKey,
     RondiTrack.Common.RateLimitPolicies.Financial)]
     [EndpointSummary("Process the next payout for a contribution cycle")]
     [EndpointDescription("""
-        Determines the next eligible recipient — the member who joined this stokvel earliest
-        and has not yet received a payout from it — records a Payout for them, and marks the
+        Determines the next eligible recipient â€” the member who joined this stokvel earliest
+        and has not yet received a payout from it â€” records a Payout for them, and marks the
         cycle as paid out. Both writes happen inside one database transaction: either both
         succeed, or neither is kept.
 
@@ -780,7 +900,7 @@ string? idempotencyKey,
             size = MaxPageSize;
 
         // --- sort allow-list (deterministic + unique tie-breaker) ---
-        // Only "createdAt" is supported for now. Anything else → 400.
+        // Only "createdAt" is supported for now. Anything else â†’ 400.
         // We always append Id as tie-breaker so two rows with the same CreatedAt
         // can never flip sides of a page boundary.
         var sortField = (sort ?? "createdAt").ToLowerInvariant();

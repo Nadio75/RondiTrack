@@ -88,11 +88,13 @@ public sealed class ContributionTransactionService
                 stokvelId.ToString(),
                 cancellationToken);
 
-            var stokvelExists = await _db.Stokvels
+            var stokvel = await _db.Stokvels
                 .AsNoTracking()
-                .AnyAsync(s => s.Id == stokvelId, cancellationToken);
+                .SingleOrDefaultAsync(
+                    s => s.Id == stokvelId,
+                    cancellationToken);
 
-            if (!stokvelExists)
+            if (stokvel is null)
                 throw new NotFoundException("Stokvel not found.");
 
             var userExists = await _db.Users
@@ -145,6 +147,12 @@ public sealed class ContributionTransactionService
             {
                 throw new ConflictException(
                     "This member has already paid for this cycle.");
+            }
+
+            if (request.Amount != stokvel.ContributionAmount)
+            {
+                throw new BusinessRuleViolationException(
+                    "The contribution must equal the stokvel's required monthly contribution.");
             }
 
             var contribution = new Contribution(
@@ -242,6 +250,21 @@ public sealed class ContributionTransactionService
             if (existing)
                 throw new ConflictException(
                     "This member has already paid for this cycle.");
+
+            var stokvel = await _db.Stokvels
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    s => s.Id == stokvelId,
+                    cancellationToken);
+
+            if (stokvel is null)
+                throw new NotFoundException("Stokvel not found.");
+
+            if (amount != stokvel.ContributionAmount)
+            {
+                throw new BusinessRuleViolationException(
+                    "The contribution must equal the stokvel's required monthly contribution.");
+            }
 
             var contribution = new Contribution(
                 stokvelId,

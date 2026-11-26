@@ -47,7 +47,7 @@ public class RecordCycleContributionApiTests
     }
 
     [Fact]
-    public async Task Records_integer_cents_as_exact_decimal_rands()
+    public async Task Records_required_integer_cents_as_exact_decimal_rands()
     {
         var s = await _client.ArrangeMemberWithCycleAsync(_factory);
 
@@ -56,7 +56,7 @@ public class RecordCycleContributionApiTests
             s.Cycle.Id,
             Guid.NewGuid().ToString(),
             s.User.Id,
-            15050);
+            50000);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
@@ -64,7 +64,7 @@ public class RecordCycleContributionApiTests
             await response.Content.ReadFromJsonAsync<ContributionResponse>();
 
         Assert.NotNull(body);
-        Assert.Equal(150.50m, body.Amount);
+        Assert.Equal(500m, body.Amount);
         Assert.Equal(s.Cycle.Id, body.ContributionCycleId);
         Assert.Equal(s.User.Id, body.UserId);
     }
@@ -91,10 +91,10 @@ public class RecordCycleContributionApiTests
         var key = Guid.NewGuid().ToString();
 
         var first = await PostAsync(
-            s.Stokvel.Id, s.Cycle.Id, key, s.User.Id, 15050);
+            s.Stokvel.Id, s.Cycle.Id, key, s.User.Id, 50000);
 
         var second = await PostAsync(
-            s.Stokvel.Id, s.Cycle.Id, key, s.User.Id, 15050);
+            s.Stokvel.Id, s.Cycle.Id, key, s.User.Id, 50000);
 
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
         Assert.Equal(HttpStatusCode.Created, second.StatusCode);
@@ -118,7 +118,7 @@ public class RecordCycleContributionApiTests
             s.Cycle.Id,
             Guid.NewGuid().ToString(),
             s.User.Id,
-            15050);
+            50000);
 
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
 
@@ -127,7 +127,7 @@ public class RecordCycleContributionApiTests
             s.Cycle.Id,
             Guid.NewGuid().ToString(),
             s.User.Id,
-            15050);
+            50000);
 
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
     }
@@ -142,7 +142,7 @@ public class RecordCycleContributionApiTests
             s.Cycle.Id,
             null,
             s.User.Id,
-            15050);
+            50000);
 
         Assert.Equal(
             HttpStatusCode.UnprocessableEntity,

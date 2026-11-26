@@ -600,6 +600,79 @@ builder.Services.AddAuthorization(options =>
 // 10. Build application
 // --------------------------------------------------
 
+
+builder.Services.AddScoped<
+    RondiTrack.Services.Notifications.ContributionNotificationService>();
+
+builder.Services.AddSingleton<
+    RondiTrack.Services.Notifications.IPushNotificationSender>(services =>
+{
+    var configuration = services.GetRequiredService<IConfiguration>();
+
+    var credentialPath = configuration["Firebase:CredentialPath"];
+
+    if (string.IsNullOrWhiteSpace(credentialPath))
+    {
+        return ActivatorUtilities.CreateInstance<
+            RondiTrack.Services.Notifications.LoggingPushNotificationSender>(
+                services);
+    }
+
+    if (!File.Exists(credentialPath))
+    {
+        throw new InvalidOperationException(
+            "Configured Firebase credential file was not found.");
+    }
+
+    var firebaseApp = FirebaseAdmin.FirebaseApp.Create(
+        new FirebaseAdmin.AppOptions
+        {
+            Credential = Google.Apis.Auth.OAuth2.CredentialFactory
+                .FromFile<Google.Apis.Auth.OAuth2.ServiceAccountCredential>(
+                    credentialPath)
+                .ToGoogleCredential()
+        },
+        $"ronditrack-{Guid.NewGuid():N}");
+
+    try
+    {
+        var messaging =
+            FirebaseAdmin.Messaging.FirebaseMessaging.GetMessaging(firebaseApp);
+
+        var sender = ActivatorUtilities.CreateInstance<
+            RondiTrack.Services.Notifications.FirebasePushNotificationSender>(
+                services, messaging);
+
+        services.GetRequiredService<IHostApplicationLifetime>()
+            .ApplicationStopped.Register(() => firebaseApp.Delete());
+
+        return sender;
+    }
+    catch
+    {
+        firebaseApp.Delete();
+        throw;
+    }
+});
+
+if (builder.Environment.IsStaging())
+{
+    builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders =
+            Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor |
+            Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+
+        options.ForwardLimit = 1;
+
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+
+        options.KnownProxies.Add(System.Net.IPAddress.Loopback);
+        options.KnownProxies.Add(System.Net.IPAddress.IPv6Loopback);
+    });
+}
+
 var app = builder.Build();
 
 // --------------------------------------------------
@@ -612,6 +685,11 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi().AllowAnonymous();
     app.MapScalarApiReference().AllowAnonymous();
+}
+
+if (app.Environment.IsStaging())
+{
+    app.UseForwardedHeaders();
 }
 
 app.UseHttpsRedirection();

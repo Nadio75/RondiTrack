@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -171,7 +171,8 @@ public sealed class StokvelContributionHistoryController : ControllerBase
                 MemberId = contribution.UserId,
                 MemberName = user.Name,
                 contribution.Amount,
-                contribution.CreatedAt
+                contribution.CreatedAt,
+                contribution.ConfirmedAtUtc
             };
 
         if (memberId.HasValue)
@@ -235,7 +236,11 @@ public sealed class StokvelContributionHistoryController : ControllerBase
                 x.MemberId,
                 x.MemberName,
                 x.Amount,
-                x.CreatedAt)).ToList();
+                x.CreatedAt)
+            {
+                IsConfirmed = x.ConfirmedAtUtc.HasValue,
+                ConfirmedAtUtc = x.ConfirmedAtUtc
+            }).ToList();
 
         return Ok(new PagedResponse<StokvelContributionHistoryItem>(
             items,
@@ -267,3 +272,4 @@ public sealed class StokvelContributionHistoryController : ControllerBase
         return true;
     }
 }
+

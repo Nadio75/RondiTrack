@@ -1,4 +1,4 @@
-namespace RondiTrack.Tests.TestSupport;
+﻿namespace RondiTrack.Tests.TestSupport;
 
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -106,6 +106,7 @@ public async Task EnsureMembershipAsync(
     builder.UseSetting("CycleClosing:Enabled", "false");
 
 builder.UseSetting("Housekeeping:Enabled", "false");
+        builder.UseSetting("Firebase:CredentialPath", "");
         builder.ConfigureTestServices(services =>
 {
     if (UseRealAuthentication)

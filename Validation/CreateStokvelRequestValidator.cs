@@ -18,5 +18,24 @@ public class CreateStokvelRequestValidator : AbstractValidator<CreateStokvelRequ
         // schedule, or whether the stokvel already exists, is not this validator's job.
         RuleFor(x => x.ContributionAmount)
             .GreaterThan(0).WithMessage("Contribution amount must be greater than zero.");
+
+        RuleFor(x => x.Rules)
+            .MaximumLength(4000);
+
+        RuleFor(x => x.ClosingDayOfMonth)
+            .InclusiveBetween(1, 31)
+            .When(x => x.ClosingDayOfMonth.HasValue);
+
+        RuleFor(x => x.FirstCyclePeriod)
+            .Must(period =>
+                period is null ||
+                System.DateTime.TryParseExact(
+                    period,
+                    "yyyy-MM",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None,
+                    out _))
+            .WithMessage(
+                "First cycle period must use yyyy-MM format.");
     }
 }

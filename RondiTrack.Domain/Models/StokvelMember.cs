@@ -1,7 +1,7 @@
 namespace RondiTrack.Domain;
 
 // No surrogate Id: this entity's identity IS the pair (UserId, StokvelId).
-// Membership isn't a bare link — it carries data of its own (Role, when it
+// Membership isn't a bare link â€” it carries data of its own (Role, when it
 // started), which is exactly why it has to be a real entity, not an
 // implicit many-to-many EF Core would build silently if asked to.
 public class StokvelMember
@@ -22,5 +22,18 @@ public class StokvelMember
         UserId = userId;
         Role = role;
         JoinedAtUtc = DateTime.UtcNow;
+    }
+
+    public void ChangeRole(string role)
+    {
+        if (Role == "Chairperson")
+            throw new InvalidOperationException(
+                "The chairperson role is protected.");
+
+        if (role != "Member" && role != "Treasurer")
+            throw new ArgumentException(
+                "Invalid membership role.", nameof(role));
+
+        Role = role;
     }
 }
